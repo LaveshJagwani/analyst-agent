@@ -109,6 +109,11 @@ async function startAnalysis() {
   analyzeBtn.disabled = true;
   analyzeBtn.querySelector('.btn-text').textContent = 'Uploading…';
 
+  // After 5s with no response, show a cold-start warning
+  const coldStartTimer = setTimeout(() => {
+    analyzeBtn.querySelector('.btn-text').textContent = 'Waking up server… (30–60s)';
+  }, 5000);
+
   const formData = new FormData();
   formData.append('csv_file', selectedFile);
   formData.append('metadata', metaInput.value.trim() || '');
@@ -116,13 +121,26 @@ async function startAnalysis() {
 
   let runId;
   try {
-    const res = await fetch(`${API}/analyze`, { method: 'POST', body: formData });
+    // 90-second timeout to handle Render free-tier cold starts
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
+    const res = await fetch(`${API}/analyze`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    clearTimeout(coldStartTimer);
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     runId = data.run_id;
     currentRunId = runId;
   } catch (err) {
-    alert(`Upload failed: ${err.message}`);
+    clearTimeout(coldStartTimer);
+    const msg = err.name === 'AbortError'
+      ? 'Server took too long to respond (>90s). The server may be sleeping — please try again in a moment.'
+      : `Upload failed: ${err.message}`;
+    alert(msg);
     analyzeBtn.disabled = false;
     analyzeBtn.querySelector('.btn-text').textContent = 'Run Analysis';
     return;

@@ -20,6 +20,7 @@ downloads/
 *.csv
 *.json
 !frontend/package.json
+!vercel.json
 
 # IDE
 .vscode/
