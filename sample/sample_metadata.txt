@@ -1,0 +1,5 @@
+We are a B2B SaaS company based in India at seed stage.
+Our main goal is increasing ARR and reducing churn.
+We recently increased marketing spend significantly.
+Key KPIs we track: MRR, churn rate, customer acquisition cost, NPS score.
+Our business model is subscription-based with three tiers (Basic, Pro, Enterprise).

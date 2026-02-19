@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analyst Agent — Autonomous Data Analyst</title>
+  <meta name="description"
+    content="Upload your CSV and get instant AI-powered business insights, charts, and strategic recommendations." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="index.css" />
+</head>
+
+<body>
+
+  <!-- ── HEADER ── -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <div class="logo-icon">⬡</div>
+        <span class="logo-text">Analyst <span class="logo-accent">Agent</span></span>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-groq">Groq · Llama 3</span>
+        <span class="badge badge-lang">LangGraph</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- ══ UPLOAD PANEL ══ -->
+    <section id="upload-section" class="panel upload-panel">
+      <div class="panel-title">
+        <span class="panel-icon">📁</span>
+        <h2>Upload Your Data</h2>
+      </div>
+
+      <!-- Drop Zone -->
+      <div id="drop-zone" class="drop-zone">
+        <div class="drop-icon">⬆</div>
+        <p class="drop-main">Drag &amp; drop a <strong>.csv</strong> file here</p>
+        <p class="drop-sub">or click to browse</p>
+        <input type="file" id="csv-input" accept=".csv" hidden />
+        <div id="file-selected" class="file-selected hidden"></div>
+      </div>
+
+      <!-- Metadata -->
+      <div class="field-group">
+        <label for="metadata-input" class="field-label">
+          Business Metadata <span class="field-optional">(optional — describe your company, goals, KPIs)</span>
+        </label>
+        <textarea id="metadata-input" class="field-textarea" rows="4"
+          placeholder="e.g. SaaS startup in India, seed stage. Focus on reducing churn and increasing ARR. KPIs: MRR, CAC, NPS."></textarea>
+      </div>
+
+      <!-- Options -->
+      <div class="options-row">
+        <label class="toggle-label" id="benchmark-label">
+          <input type="checkbox" id="benchmark-toggle" class="toggle-input" />
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="toggle-text">Enable Industry Benchmarks</span>
+          <span class="toggle-sub">Uses Tavily web search to compare your KPIs to live market data</span>
+        </label>
+      </div>
+
+      <!-- Submit -->
+      <button id="analyze-btn" class="btn-primary" disabled>
+        <span class="btn-icon">⚡</span>
+        <span class="btn-text">Run Analysis</span>
+      </button>
+    </section>
+
+    <!-- ══ PIPELINE SECTION ══ -->
+    <section id="pipeline-section" class="panel pipeline-panel hidden">
+      <div class="panel-title">
+        <span class="panel-icon">⏱</span>
+        <h2>Analysis Timeline</h2>
+        <span id="pipeline-status-badge" class="status-badge status-running">Running</span>
+      </div>
+
+      <div class="timeline" id="timeline">
+        <!-- Nodes injected by JS -->
+      </div>
+    </section>
+
+    <!-- ══ RESULTS SECTION ══ -->
+    <section id="results-section" class="results-section hidden">
+
+      <!-- Summary Bar -->
+      <div class="summary-bar" id="summary-bar">
+        <div class="summary-card">
+          <div class="summary-value" id="summary-rows">—</div>
+          <div class="summary-label">Rows Analysed</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-cols">—</div>
+          <div class="summary-label">Columns</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-insights">—</div>
+          <div class="summary-label">Insights</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-charts">—</div>
+          <div class="summary-label">Charts</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-recs">—</div>
+          <div class="summary-label">Recommendations</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-context">—</div>
+          <div class="summary-label">Business Context</div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs-bar">
+        <button class="tab-btn active" data-tab="insights">💡 Insights</button>
+        <button class="tab-btn" data-tab="charts">📈 Charts</button>
+        <button class="tab-btn" data-tab="recommendations">🎯 Recommendations</button>
+        <button class="tab-btn" data-tab="presentation">🎬 Presentation</button>
+        <button id="download-pptx-btn" class="btn-download-pptx" disabled title="Download as PowerPoint">
+          ⤓ Download .pptx
+        </button>
+      </div>
+
+      <!-- Tab: Insights -->
+      <div id="tab-insights" class="tab-content active">
+        <div class="insights-grid" id="insights-grid"></div>
+      </div>
+
+      <!-- Tab: Charts -->
+      <div id="tab-charts" class="tab-content">
+        <div class="charts-grid" id="charts-grid"></div>
+      </div>
+
+      <!-- Tab: Recommendations -->
+      <div id="tab-recommendations" class="tab-content">
+        <div class="recs-list" id="recs-list"></div>
+      </div>
+
+      <!-- Tab: Presentation -->
+      <div id="tab-presentation" class="tab-content">
+        <div class="slide-viewer" id="slide-viewer">
+          <div class="slide-controls">
+            <button class="slide-nav" id="slide-prev">← Prev</button>
+            <span class="slide-counter" id="slide-counter">1 / 1</span>
+            <button class="slide-nav" id="slide-next">Next →</button>
+          </div>
+          <div class="slide-stage" id="slide-stage"></div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ── LIGHTBOX ── -->
+  <div id="lightbox" class="lightbox hidden">
+    <div class="lightbox-backdrop" id="lightbox-backdrop"></div>
+    <img id="lightbox-img" src="" alt="Chart" class="lightbox-img" />
+    <div id="lightbox-caption" class="lightbox-caption" style="display:none">
+      <div class="lb-title"></div>
+      <div class="lb-desc"></div>
+    </div>
+    <button class="lightbox-close" id="lightbox-close">✕</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
