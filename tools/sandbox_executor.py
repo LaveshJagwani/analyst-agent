@@ -64,22 +64,26 @@ def execute_python(code: str, csv_path: str, step_id: int) -> dict:
     # Capture stdout
     stdout_buffer = io.StringIO()
     charts_saved: list[str] = []
+    old_handler = None
 
     try:
         # Set timeout on Unix; on Windows we skip signal-based timeout
         try:
-            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(EXECUTION_TIMEOUT_SECONDS)
+            if hasattr(signal, "SIGALRM"):
+                old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+                signal.alarm(EXECUTION_TIMEOUT_SECONDS)
         except (AttributeError, ValueError):
-            pass  # Windows: no SIGALRM
+            pass  # Windows or background thread: no SIGALRM/signal.signal support
 
         with contextlib.redirect_stdout(stdout_buffer):
             exec(code, namespace)  # noqa: S102
 
         # Cancel alarm if it was set
         try:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
+            if hasattr(signal, "SIGALRM"):
+                signal.alarm(0)
+                if old_handler is not None:
+                    signal.signal(signal.SIGALRM, old_handler)
         except (AttributeError, ValueError):
             pass
 

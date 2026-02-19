@@ -81,11 +81,15 @@ def insight_validator_node(state: AnalysisState) -> dict:
         results_parts.append(section)
 
     if not results_parts:
-        log.warning("No successful execution results to validate.")
+        error_msg = "Analysis steps did not produce usable results."
+        if error_steps:
+            error_msg = f"Analysis failed: {len(error_steps)} step(s) encountered execution errors."
+            log.error("Analysis steps failed: %s", validation_flags)
+        
         return {
             "validated_insights": [{
                 "title": "Insufficient Data",
-                "description": "Analysis steps did not produce usable results.",
+                "description": error_msg,
                 "confidence": "low",
             }]
         }
