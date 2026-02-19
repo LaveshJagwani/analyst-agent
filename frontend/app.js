@@ -1,6 +1,12 @@
 /* ── Autonomous Data Analyst — Frontend App ── */
 
-const API = 'http://localhost:8000';
+// Detect environment
+const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const RENDER_BACKEND_URL = 'https://analyst-agent-b0qp.onrender.com';
+const API = IS_LOCAL
+  ? 'http://localhost:8000'
+  : (window.BACKEND_URL || RENDER_BACKEND_URL);
+
 
 // ── Node display metadata ─────────────────────────────────────────
 const NODES = [
