@@ -37,7 +37,7 @@ app.add_middleware(
 app.mount("/charts", StaticFiles(directory=str(CHARTS_DIR)), name="charts")
 
 # ── Serve frontend ────────────────────────────────────────────────────────────
-FRONTEND_DIR = Path(__file__).parent / "frontend"
+FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 if FRONTEND_DIR.exists():
     app.mount("/ui", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
 

@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-black text-white selection:bg-accent/30;
+  }
+}
+
+.glass {
+  @apply bg-white/[0.02] border border-white/[0.05] backdrop-blur-xl transition-all duration-300;
+}
+
+.glass-hover:hover {
+  @apply bg-white/[0.05] border-white/[0.1] shadow-2xl shadow-black;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-black;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full hover:bg-white/20;
+}

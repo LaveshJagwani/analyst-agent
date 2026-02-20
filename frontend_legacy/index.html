@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analyst Agent — Autonomous Data Analyst</title>
+  <meta name="description"
+    content="Upload your CSV and get instant AI-powered business insights, charts, and strategic recommendations." />
+  <link rel="stylesheet" href="index.css?v=3" />
+</head>
+
+<body>
+
+  <!-- ── HEADER ── -->
+  <header class="header">
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <div class="logo-icon">⬡</div>
+        <span class="logo-text">Analyst <span class="logo-accent">Agent</span></span>
+      </a>
+      <div class="header-badges">
+        <span class="badge badge-groq">Llama 3.3</span>
+        <span class="badge badge-lang">LangGraph</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- ══ UPLOAD PANEL ══ -->
+    <section id="upload-section" class="panel upload-panel">
+      <div class="panel-title">
+        <div class="panel-icon">📁</div>
+        <h2>Data Ingestion</h2>
+      </div>
+
+      <!-- Drop Zone -->
+      <div id="drop-zone" class="drop-zone">
+        <div class="drop-icon"></div> <!-- Use a symbol or keep text icon -->
+        <p class="drop-main">Drop your dataset here</p>
+        <p class="drop-sub">Drag &amp; drop a <strong>.csv</strong> file or click to browse</p>
+        <input type="file" id="csv-input" accept=".csv" hidden />
+        <div id="file-selected" class="file-selected hidden"></div>
+      </div>
+
+      <!-- Metadata -->
+      <div class="field-group">
+        <label for="metadata-input" class="field-label">
+          Business Strategy Context <span class="field-optional">(Optional)</span>
+        </label>
+        <textarea id="metadata-input" class="field-textarea" rows="4"
+          placeholder="e.g. Fintech startup in LATAM, Series A. Focus on improving LTV and identifying high-churn segments."></textarea>
+      </div>
+
+      <!-- Options -->
+      <div class="options-row">
+        <label class="toggle-label" id="benchmark-label">
+          <input type="checkbox" id="benchmark-toggle" class="toggle-input" hidden />
+          <div class="toggle-track">
+            <div class="toggle-thumb"></div>
+          </div>
+          <div class="toggle-content">
+            <span class="toggle-text">Industry Intelligence</span>
+            <span class="toggle-sub">Benchmark your KPIs against real-time market data via Tavily Search</span>
+          </div>
+        </label>
+      </div>
+
+      <!-- Submit -->
+      <button id="analyze-btn" class="btn-primary" disabled>
+        <span class="btn-icon">✧</span>
+        <span class="btn-text">Initiate Analysis</span>
+      </button>
+    </section>
+
+    <!-- ══ PIPELINE SECTION ══ -->
+    <section id="pipeline-section" class="panel pipeline-panel hidden">
+      <div class="panel-title">
+        <div class="panel-icon">⚙</div>
+        <h2>Core Engine Processing</h2>
+        <span id="pipeline-status-badge" class="status-badge status-running">Running</span>
+      </div>
+
+      <div class="timeline" id="timeline">
+        <!-- Nodes injected by JS -->
+      </div>
+    </section>
+
+    <!-- ══ RESULTS SECTION ══ -->
+    <section id="results-section" class="results-section hidden">
+
+      <!-- Summary Bar -->
+      <div class="summary-bar" id="summary-bar">
+        <div class="summary-card">
+          <div class="summary-value" id="summary-rows">—</div>
+          <div class="summary-label">Rows</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-cols">—</div>
+          <div class="summary-label">Dimensions</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-insights">—</div>
+          <div class="summary-label">Findings</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-charts">—</div>
+          <div class="summary-label">Visuals</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-recs">—</div>
+          <div class="summary-label">Strategies</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-value" id="summary-context">—</div>
+          <div class="summary-label">Domain</div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs-bar">
+        <button class="tab-btn active" data-tab="insights"><span>💡</span> Insights</button>
+        <button class="tab-btn" data-tab="charts"><span>📈</span> Visuals</button>
+        <button class="tab-btn" data-tab="recommendations"><span>🎯</span> Strategy</button>
+        <button class="tab-btn" data-tab="presentation"><span>🎬</span> Output</button>
+        <button id="download-pptx-btn" class="btn-download-pptx" disabled>
+          <span>⤓</span> Download Deck
+        </button>
+      </div>
+
+      <!-- Tab: Insights -->
+      <div id="tab-insights" class="tab-content active">
+        <div class="insights-grid" id="insights-grid"></div>
+      </div>
+
+      <!-- Tab: Charts -->
+      <div id="tab-charts" class="tab-content">
+        <div class="charts-grid" id="charts-grid"></div>
+      </div>
+
+      <!-- Tab: Recommendations -->
+      <div id="tab-recommendations" class="tab-content">
+        <div class="recs-list" id="recs-list"></div>
+      </div>
+
+      <!-- Tab: Presentation -->
+      <div id="tab-presentation" class="tab-content">
+        <div class="slide-viewer" id="slide-viewer">
+          <div class="slide-stage" id="slide-stage"></div>
+          <div class="slide-controls">
+            <button class="slide-nav" id="slide-prev">PREV</button>
+            <span class="slide-counter" id="slide-counter">1 / 1</span>
+            <button class="slide-nav" id="slide-next">NEXT</button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ── LIGHTBOX ── -->
+  <div id="lightbox" class="lightbox hidden">
+    <div class="lightbox-backdrop" id="lightbox-backdrop"></div>
+    <img id="lightbox-img" src="" alt="Chart" class="lightbox-img" />
+    <button class="lightbox-close" id="lightbox-close">✕</button>
+  </div>
+
+  <script src="config.js?v=3"></script>
+  <script src="app.js?v=3"></script>
+</body>
+
+</html>

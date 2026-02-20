@@ -6,15 +6,15 @@ const API = window.BACKEND_URL || 'https://analyst-agent-b0qp.onrender.com';
 
 // ── Node display metadata ─────────────────────────────────────────
 const NODES = [
-  { id: 'metadata_parser', label: 'Metadata Parser', icon: '📋', detail: 'Parsing business context...' },
-  { id: 'schema_analyzer', label: 'Schema Analyzer', icon: '🔍', detail: 'Profiling CSV structure...' },
-  { id: 'context_classifier', label: 'Context Classifier', icon: '🏢', detail: 'Classifying business domain...' },
-  { id: 'analysis_planner', label: 'Analysis Planner', icon: '📐', detail: 'Generating analysis plan...' },
+  { id: 'metadata_parser', label: 'Metadata Parser', icon: '📄', detail: 'Parsing business context...' },
+  { id: 'schema_analyzer', label: 'Schema Analyzer', icon: '💎', detail: 'Profiling CSV structure...' },
+  { id: 'context_classifier', label: 'Context Classifier', icon: '🌐', detail: 'Classifying business domain...' },
+  { id: 'analysis_planner', label: 'Analysis Planner', icon: '📝', detail: 'Generating analysis plan...' },
   { id: 'code_executor', label: 'Code Executor', icon: '⚡', detail: 'Running analysis steps...' },
-  { id: 'insight_validator', label: 'Insight Validator', icon: '✅', detail: 'Validating findings...' },
-  { id: 'strategy_generator', label: 'Strategy Generator', icon: '🎯', detail: 'Generating recommendations...' },
-  { id: 'benchmark', label: 'Benchmark (optional)', icon: '📊', detail: 'Fetching market data...' },
-  { id: 'presentation_generator', label: 'Presentation Generator', icon: '🎬', detail: 'Building slide deck...' },
+  { id: 'insight_validator', label: 'Insight Validator', icon: '🛡️', detail: 'Validating findings...' },
+  { id: 'strategy_generator', label: 'Strategy Generator', icon: '🗺️', detail: 'Generating recommendations...' },
+  { id: 'benchmark', label: 'Benchmark (optional)', icon: '🧭', detail: 'Fetching market data...' },
+  { id: 'presentation_generator', label: 'Presentation Generator', icon: '🎭', detail: 'Building slide deck...' },
 ];
 
 // ── DOM refs ──────────────────────────────────────────────────────
@@ -374,13 +374,15 @@ function renderRecommendations(recs) {
     const next = rec.suggested_next_step || rec.next || rec.NEXT || '';
 
     card.innerHTML = `
-      <div class="rec-number">Recommendation ${i + 1}</div>
+      <div class="rec-header-wrap">
+        <div class="rec-number">Strategy Recommendation ${i + 1}</div>
+      </div>
       <div class="rec-action">${escHtml(action)}</div>
       <div class="rec-grid">
-        ${why ? `<div><div class="rec-field-label">Why</div><div class="rec-field-value">${escHtml(why)}</div></div>` : ''}
-        ${impact ? `<div><div class="rec-field-label">Impact</div><div class="rec-field-value">${escHtml(impact)}</div></div>` : ''}
-        ${risk ? `<div><div class="rec-field-label">Risk</div><div class="rec-field-value">${escHtml(risk)}</div></div>` : ''}
-        ${next ? `<div><div class="rec-field-label">Next Step</div><div class="rec-field-value">${escHtml(next)}</div></div>` : ''}
+        ${why ? `<div class="rec-item"><div class="rec-field-label">Rationale</div><div class="rec-field-value">${escHtml(why)}</div></div>` : ''}
+        ${impact ? `<div class="rec-item"><div class="rec-field-label">Strategic Impact</div><div class="rec-field-value">${escHtml(impact)}</div></div>` : ''}
+        ${risk ? `<div class="rec-item"><div class="rec-field-label">Primary Risk</div><div class="rec-field-value">${escHtml(risk)}</div></div>` : ''}
+        ${next ? `<div class="rec-item"><div class="rec-field-label">Execution Step</div><div class="rec-field-value">${escHtml(next)}</div></div>` : ''}
       </div>`;
     recsList.appendChild(card);
   });
