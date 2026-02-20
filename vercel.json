@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "outputDirectory": "frontend",
+  "outputDirectory": "frontend/dist",
   "builds": [
     {
       "src": "frontend/**",
