@@ -115,11 +115,13 @@ def code_executor_node(state: AnalysisState) -> dict:
         "stdout": exec_result.get("stdout", ""),
         "result": exec_result.get("result"),
         "error": exec_result.get("error"),
-        "charts": exec_result.get("charts", []),
+        "charts": exec_result.get("charts", []), # This is now a list of dicts
     }
 
+    # Maintain a global flat list of paths for legacy reasons/simplicity in some tools
+    new_chart_paths = [c["path"] if isinstance(c, dict) else c for c in exec_result.get("charts", [])]
     charts = list(state.get("generated_charts", []))
-    charts.extend(exec_result.get("charts", []))
+    charts.extend(new_chart_paths)
 
     return {
         "execution_results": results,

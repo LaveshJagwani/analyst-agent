@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import CHARTS_DIR, OUTPUT_DIR
+from tools.pptx_exporter import export_pptx
 
 app = FastAPI(title="Autonomous Data Analyst API", version="1.0.0")
 
@@ -150,6 +151,15 @@ def _run_analysis(run_id: str, csv_path: str, metadata: Optional[str], benchmark
         # Save full result to disk
         result_path = OUTPUT_DIR / f"result_{run_id}.json"
         result_path.write_text(json.dumps(result, indent=2, default=str))
+
+        # Generate Presentation PPTX
+        pptx_path = OUTPUT_DIR / f"presentation_{run_id}.pptx"
+        try:
+            pres_payload = final_state.get("presentation_payload", {})
+            export_pptx({"presentation": pres_payload}, pptx_path, charts_dir=CHARTS_DIR)
+            result["presentation_url"] = f"/presentation/{run_id}"
+        except Exception as pe:
+            log.error("Failed to generate PPTX for run %s: %s", run_id, str(pe))
 
         run["result"] = result
         run["status"] = "done"
@@ -286,6 +296,18 @@ async def root():
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/ui/index.html")
 
+
+@app.get("/presentation/{run_id}")
+async def get_presentation(run_id: str):
+    """Download the generated PowerPoint presentation."""
+    pptx_path = OUTPUT_DIR / f"presentation_{run_id}.pptx"
+    if not pptx_path.exists():
+        raise HTTPException(status_code=404, detail="Presentation not found or not yet generated.")
+    return FileResponse(
+        path=pptx_path,
+        filename=f"Analysis_Report_{run_id[:8]}.pptx",
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
 
 if __name__ == "__main__":
     import uvicorn

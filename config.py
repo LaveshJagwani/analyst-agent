@@ -14,9 +14,10 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # ── LangSmith Tracing ─────────────────────────────────────────────────────────
 LANGSMITH_ENABLED = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+LANGCHAIN_PROJECT = os.getenv("LANGCHAIN_PROJECT", "analyst-agent")
 if LANGSMITH_ENABLED:
     os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
-    os.environ.setdefault("LANGCHAIN_PROJECT", "analyst-agent")
+    os.environ.setdefault("LANGCHAIN_PROJECT", LANGCHAIN_PROJECT)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent

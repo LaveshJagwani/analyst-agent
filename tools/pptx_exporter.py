@@ -3,187 +3,192 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pathlib import Path
+from design_systems import DESIGN_SYSTEMS
 
-# ── Theme & Layout Constants ──────────────────────────────────────────────────
-# Brand Colors (Dark Mode Tech Theme)
-BG_COLOR = RGBColor(0x0B, 0x0E, 0x1A)      # Deep Navy/Black
-ACCENT_COLOR = RGBColor(0x3B, 0x82, 0xF6)  # Bright Blue
-TEXT_COLOR = RGBColor(0xF3, 0xF4, 0xF6)    # Off-White
-TEXT_MUTED = RGBColor(0x9C, 0xA3, 0xAF)    # Grey
-CARD_BG = RGBColor(0x1F, 0x29, 0x37)       # Dark Grey/Blue Card
+def hex_to_rgb(hex_str: str) -> RGBColor:
+    """Convert hex string (e.g. #0F172A) to RGBColor object."""
+    hex_str = hex_str.lstrip('#')
+    r, g, b = tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
+    return RGBColor(r, g, b)
 
-def _bg(slide):
-    """Apply standard background."""
+def apply_design(slide, design_spec: dict):
+    """Apply background and fonts based on design system."""
+    system_name = design_spec.get("design_system", "modern_blue")
+    system = DESIGN_SYSTEMS.get(system_name, DESIGN_SYSTEMS["modern_blue"])
+    palette = system["palette"]
+    
+    bg_color = hex_to_rgb(palette[0])
+    
     bg = slide.background
     fill = bg.fill
     fill.solid()
-    fill.fore_color.rgb = BG_COLOR
+    fill.fore_color.rgb = bg_color
+    return system
 
-def _title_slide(prs, title: str, subtitle: str):
+# ── Renderers ─────────────────────────────────────────────────────────────────
+
+def render_title_slide(prs, slide_data: dict, design_spec: dict):
     slide = prs.slides.add_slide(prs.slide_layouts[0])
-    _bg(slide)
+    system = apply_design(slide, design_spec)
+    palette = system["palette"]
+    font_name = system["font"]
+    
+    primary_color = hex_to_rgb(palette[2])
+    accent_color = hex_to_rgb(palette[1])
     
     # Title
     t = slide.shapes.title
-    t.text = title
-    t.text_frame.paragraphs[0].font.color.rgb = TEXT_COLOR
+    t.text = slide_data.get("title", "Analysis Report")
+    t.text_frame.paragraphs[0].font.color.rgb = primary_color
+    t.text_frame.paragraphs[0].font.name = font_name
     t.text_frame.paragraphs[0].font.size = Pt(44)
     t.text_frame.paragraphs[0].font.bold = True
     
     # Subtitle
     if slide.placeholders.count > 1:
         s = slide.placeholders[1]
-        s.text = subtitle
-        s.text_frame.paragraphs[0].font.color.rgb = ACCENT_COLOR
+        s.text = slide_data.get("subtitle", "")
+        s.text_frame.paragraphs[0].font.color.rgb = accent_color
+        s.text_frame.paragraphs[0].font.name = font_name
         s.text_frame.paragraphs[0].font.size = Pt(24)
 
-def _data_story_slide(prs, title: str, bullets: list[str], chart_path: str):
-    """
-    Creates a slide with a chart on the right and narrative bullets on the left.
-    """
-    slide = prs.slides.add_slide(prs.slide_layouts[6]) # Blank layout
-    _bg(slide)
-
-    # 1. Header
-    left = Inches(0.5)
-    top = Inches(0.4)
-    width = Inches(9)
-    height = Inches(1.0)
+def render_headline_metric(prs, slide_data: dict, design_spec: dict):
+    """One big metric and a headline."""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    system = apply_design(slide, design_spec)
+    palette = system["palette"]
+    font_name = system["font"]
+    accent_color = hex_to_rgb(palette[1])
+    text_color = hex_to_rgb(palette[2])
     
-    txBox = slide.shapes.add_textbox(left, top, width, height)
+    # Headline
+    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9), Inches(1))
     tf = txBox.text_frame
     p = tf.paragraphs[0]
-    p.text = title
+    p.text = slide_data.get("title", "")
     p.font.bold = True
-    p.font.size = Pt(28)
-    p.font.color.rgb = TEXT_COLOR
+    p.font.size = Pt(32)
+    p.font.color.rgb = text_color
+    p.font.name = font_name
     
-    # 2. Add Chart (Right Side)
-    # Target area: Left ~6.5", Top ~1.8", Width ~6.5", Height ~5.0"
+    # Metric (Large)
+    content = slide_data.get("content", [])
+    metric_text = content[0] if content else "N/A"
+    
+    mBox = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(2))
+    mtf = mBox.text_frame
+    mp = mtf.paragraphs[0]
+    mp.text = metric_text
+    mp.font.bold = True
+    mp.font.size = Pt(72)
+    mp.font.color.rgb = accent_color
+    mp.font.name = font_name
+    mp.alignment = PP_ALIGN.CENTER
+
+def render_chart_left_text_right(prs, slide_data: dict, design_spec: dict, charts_dir: Path):
+    """Chart on left, bullets on right."""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    system = apply_design(slide, design_spec)
+    palette = system["palette"]
+    font_name = system["font"]
+    text_color = hex_to_rgb(palette[2])
+    
+    # Title
+    tBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(12), Inches(1))
+    p = tBox.text_frame.paragraphs[0]
+    p.text = slide_data.get("title", "")
+    p.font.bold = True; p.font.size = Pt(28); p.font.color.rgb = text_color; p.font.name = font_name
+    
+    # Chart (Left)
+    c_ref = slide_data.get("chart_reference")
     chart_placed = False
-    if chart_path and Path(chart_path).exists():
-        try:
-            # Fixed dimensions
-            cx, cy = Inches(6.0), Inches(1.6)
-            cw, ch = Inches(7.0), Inches(5.0)
-            slide.shapes.add_picture(chart_path, cx, cy, cw, ch)
+    if c_ref and charts_dir:
+        p = charts_dir / Path(c_ref).name
+        if p.exists():
+            slide.shapes.add_picture(str(p), Inches(0.5), Inches(1.6), Inches(6.5), Inches(5.0))
             chart_placed = True
-        except Exception:
-            pass
             
-    # 3. Add Narrative Bullets (Left Side)
-    # If chart placed, use left column. If not, use full width.
-    bx, by = Inches(0.5), Inches(1.6)
-    bw = Inches(5.0) if chart_placed else Inches(9.0)
-    bh = Inches(5.0)
+    # Text (Right)
+    bx = Inches(7.5) if chart_placed else Inches(1.0)
+    bw = Inches(5.0) if chart_placed else Inches(11.0)
     
-    bBox = slide.shapes.add_textbox(bx, by, bw, bh)
+    bBox = slide.shapes.add_textbox(bx, Inches(1.6), bw, Inches(5.0))
     tf = bBox.text_frame
     tf.word_wrap = True
-    
-    for bullet in bullets:
+    for bullet in slide_data.get("content", []):
         p = tf.add_paragraph()
-        p.text = bullet
-        p.font.size = Pt(18)
-        p.font.color.rgb = TEXT_COLOR
-        p.space_after = Pt(14)
-        p.level = 0
-        
-        # Add a custom bullet character if possible, or just standard
-        # For now, standard dash is fine. 
-        # To make it "McKinsey style", we often use bold lead-ins manually if provided.
+        p.text = f"• {bullet}"
+        p.font.size = Pt(18); p.font.color.rgb = text_color; p.font.name = font_name
+        p.space_after = Pt(12)
 
-def _summary_slide(prs, title: str, content: list[str]):
+def render_comparison_blocks(prs, slide_data: dict, design_spec: dict):
+    """Side by side blocks."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _bg(slide)
+    system = apply_design(slide, design_spec)
+    palette = system["palette"]
+    font_name = system["font"]
+    text_color = hex_to_rgb(palette[2])
+    accent_color = hex_to_rgb(palette[1])
     
-    # Header
-    left = Inches(0.5); top = Inches(0.5); width = Inches(9); height = Inches(1)
-    t = slide.shapes.add_textbox(left, top, width, height).text_frame.paragraphs[0]
-    t.text = title
-    t.font.bold = True; t.font.size = Pt(32); t.font.color.rgb = ACCENT_COLOR
+    # Title
+    tBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.4), Inches(12), Inches(1))
+    p = tBox.text_frame.paragraphs[0]
+    p.text = slide_data.get("title", "")
+    p.font.bold = True; p.font.size = Pt(28); p.font.color.rgb = accent_color; p.font.name = font_name
     
-    # Content
-    left = Inches(1.0); top = Inches(1.8); width = Inches(8.5); height = Inches(5)
-    tx = slide.shapes.add_textbox(left, top, width, height)
-    for line in content:
-        p = tx.text_frame.add_paragraph()
-        p.text = line
-        p.font.size = Pt(22)
-        p.font.color.rgb = TEXT_COLOR
-        p.space_after = Pt(20)
+    # Content Blocks
+    content = slide_data.get("content", [])
+    for i, item in enumerate(content[:3]): # Max 3 blocks
+        x = Inches(0.5 + i*4.2)
+        box = slide.shapes.add_textbox(x, Inches(2.0), Inches(4.0), Inches(4.5))
+        box.text_frame.word_wrap = True
+        p = box.text_frame.paragraphs[0]
+        p.text = item
+        p.font.size = Pt(16); p.font.color.rgb = text_color; p.font.name = font_name
 
 def export_pptx(result: dict, output_path: Path, charts_dir: Path = None):
-    """
-    Generate a curated, narrative-driven presentation.
-    Uses the structure defined by the LLM in 'presentation_payload'.
-    """
     prs = Presentation()
-    
-    # Dimensions: 16:9
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
     
-    # Get payload
     payload = result.get("presentation", {})
     slides = payload.get("slides", [])
+    design_spec = payload.get("design", {}) or {
+        "design_system": "modern_blue",
+        "layout_map": {},
+        "visual_rules": {}
+    }
     
-    # Fallback if empty (shouldn't happen with new prompt)
-    if not slides:
-        _title_slide(prs, "Analysis Report", "Generated by Analyst Agent")
-        
-    # Build slides based on LLM 'type'
-    success_count = 0
+    layout_map = design_spec.get("layout_map", {})
+    
     for i, slide_data in enumerate(slides):
+        stype = slide_data.get("type", "generic")
+        
+        # Decide layout
+        layout = "generic"
+        if stype == "title":
+            layout = "title"
+        elif stype == "summary":
+            layout = layout_map.get("executive_summary", "headline_metric")
+        elif stype == "chart":
+            layout = layout_map.get("main_insights", "chart_left_text_right")
+        elif stype == "recommendations":
+            layout = layout_map.get("recommendations", "comparison_blocks")
+            
         try:
-            stype = slide_data.get("type", "generic")
-            title = slide_data.get("title", f"Slide {i+1}")
-            content = slide_data.get("content", [])
-            
-            if isinstance(content, str):
-                content = [content]
-                
-            if stype == "title":
-                subtitle = slide_data.get("subtitle", "")
-                _title_slide(prs, title, subtitle)
-                
-            elif stype in ["summary", "recommendations"]:
-                _summary_slide(prs, title, content)
-                
-            elif stype == "chart":
-                # Resolve chart path
-                # The LLM returns the *name* or *relative path* or *full path*
-                c_ref = slide_data.get("chart_reference")
-                real_path = None
-                if c_ref and charts_dir:
-                    # Try exact match
-                    p = charts_dir / Path(c_ref).name
-                    if p.exists():
-                        real_path = str(p)
-                    else:
-                        # Fuzzy match?
-                        try:
-                            # If chart_reference is just a step number 'Step 3', find first chart for that step
-                            pass
-                        except Exception:
-                            pass
-                
-                _data_story_slide(prs, title, content, real_path)
-                
+            if layout == "title":
+                render_title_slide(prs, slide_data, design_spec)
+            elif layout == "headline_metric":
+                render_headline_metric(prs, slide_data, design_spec)
+            elif layout == "chart_left_text_right":
+                render_chart_left_text_right(prs, slide_data, design_spec, charts_dir)
+            elif layout == "comparison_blocks":
+                render_comparison_blocks(prs, slide_data, design_spec)
             else:
-                # Generic fallback
-                _summary_slide(prs, title, content)
-            
-            success_count += 1
-            
+                # Default generic
+                render_chart_left_text_right(prs, slide_data, design_spec, charts_dir)
         except Exception as e:
-            print(f"Failed to generate slide {i}: {e}")
-            # Continue to next slide instead of crashing
-            continue
-            
-    if success_count == 0:
-        # If all failed or none existed, add a fallback slide
-        _title_slide(prs, "Analysis Complete", "See full report in dashboard.")
+            print(f"Error rendering slide {i}: {e}")
             
     prs.save(str(output_path))
     return str(output_path)

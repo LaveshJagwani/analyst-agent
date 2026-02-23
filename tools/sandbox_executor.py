@@ -89,11 +89,29 @@ def execute_python(code: str, csv_path: str, step_id: int) -> dict:
 
         # Save any open figures
         fig_nums = plt.get_fignums()
+        charts_metadata: list[dict] = []
         for fig_num in fig_nums:
             fig = plt.figure(fig_num)
-            chart_path = str(CHARTS_DIR / f"step_{step_id}_fig_{fig_num}.png")
+            
+            # Try to extract a title
+            title = f"Chart {fig_num}"
+            axes = fig.get_axes()
+            if axes:
+                # Often the first axis title is the main chart title
+                ax_title = axes[0].get_title()
+                if ax_title:
+                    title = ax_title
+            
+            chart_filename = f"step_{step_id}_fig_{fig_num}.png"
+            chart_path = str(CHARTS_DIR / chart_filename)
             fig.savefig(chart_path, dpi=150, bbox_inches="tight")
+            
+            charts_metadata.append({
+                "path": chart_path,
+                "title": title
+            })
             charts_saved.append(chart_path)
+            
         plt.close("all")
 
         # Extract result
@@ -106,7 +124,7 @@ def execute_python(code: str, csv_path: str, step_id: int) -> dict:
         return {
             "stdout": stdout_buffer.getvalue(),
             "result": str(result_value) if result_value is not None else None,
-            "charts": charts_saved,
+            "charts": charts_metadata, # Return list of dicts now
             "error": None,
         }
 

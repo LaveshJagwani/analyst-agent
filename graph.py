@@ -14,6 +14,7 @@ from nodes.code_executor import code_executor_node, should_continue_execution
 from nodes.insight_validator import insight_validator_node
 from nodes.strategy_generator import strategy_generator_node
 from nodes.benchmark_node import benchmark_node, should_run_benchmark
+from nodes.design_planner import design_planner_node
 from nodes.presentation_generator import presentation_generator_node
 
 
@@ -31,6 +32,7 @@ def build_graph() -> StateGraph:
     graph.add_node("insight_validator", insight_validator_node)
     graph.add_node("strategy_generator", strategy_generator_node)
     graph.add_node("benchmark", benchmark_node)
+    graph.add_node("design_planner", design_planner_node)
     graph.add_node("presentation_generator", presentation_generator_node)
 
     # ── Set entry point ───────────────────────────────────────────────────────
@@ -61,10 +63,11 @@ def build_graph() -> StateGraph:
         should_run_benchmark,
         {
             "run": "benchmark",
-            "skip": "presentation_generator",
+            "skip": "design_planner",
         },
     )
-    graph.add_edge("benchmark", "presentation_generator")
+    graph.add_edge("benchmark", "design_planner")
+    graph.add_edge("design_planner", "presentation_generator")
 
     # ── End ────────────────────────────────────────────────────────────────────
     graph.add_edge("presentation_generator", END)

@@ -89,6 +89,7 @@ class AnalysisState(TypedDict, total=False):
 
     # Presentation
     presentation_payload: Optional[dict]
+    presentation_design: Optional[dict]
 
     # Logging
     trace_log: list[dict]

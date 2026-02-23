@@ -15,7 +15,9 @@ from pathlib import Path
 # Ensure project root is on the path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config import OUTPUT_DIR, LANGSMITH_ENABLED
+from config import OUTPUT_DIR, CHARTS_DIR, LANGSMITH_ENABLED, LANGCHAIN_PROJECT
+from tools.pptx_exporter import export_pptx
+from langsmith import Client
 from graph import analyst_graph
 from logger import log, trace
 
@@ -111,14 +113,33 @@ def print_results(final_state: dict):
         print(f"🎬  Presentation: \"{pres.get('title', 'N/A')}\" — {len(slides)} slides")
 
         # Save presentation JSON
-        pres_path = OUTPUT_DIR / "presentation.json"
-        with open(pres_path, "w", encoding="utf-8") as f:
+        json_path = OUTPUT_DIR / "presentation.json"
+        with open(json_path, "w", encoding="utf-8") as f:
             json.dump(pres, f, indent=2, default=str)
-        print(f"  💾 Saved to: {pres_path}")
+        print(f"  💾 Data saved to: {json_path}")
+
+        # Generate PPTX
+        pptx_path = OUTPUT_DIR / "presentation.pptx"
+        try:
+            # We wrap the payload back into a result-like dict for the exporter
+            export_pptx({"presentation": pres}, pptx_path, charts_dir=CHARTS_DIR)
+            print(f"  📊 Presentation generated: {pptx_path}")
+        except Exception as e:
+            print(f"  ❌ Presentation generation failed: {e}")
         print()
 
     # Trace
     print(f"📝  Execution trace: {trace.path}")
+    if LANGSMITH_ENABLED:
+        try:
+            client = Client()
+            # Get the most recent run in the project
+            runs = list(client.list_runs(project_name=LANGCHAIN_PROJECT, limit=1))
+            if runs:
+                url = client.get_run_url(run=runs[0])
+                print(f"LangSmith Trace: {url}")
+        except Exception:
+            pass
     print("═" * 70)
 
 
