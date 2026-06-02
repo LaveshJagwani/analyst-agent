@@ -32,9 +32,59 @@ const NODES = [
   { id: 'presentation_generator', label: 'Presentation Generator', icon: '🎭' },
 ];
 
+const SOURCE_TYPES = [
+  {
+    id: 'csv',
+    label: 'CSV',
+    icon: '📄',
+    accept: '.csv',
+    description: 'Comma-separated values',
+    color: 'text-emerald-400',
+    badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  },
+  {
+    id: 'excel',
+    label: 'Excel',
+    icon: '📊',
+    accept: '.xlsx,.xls',
+    description: 'Microsoft Excel workbook',
+    color: 'text-green-400',
+    badge: 'bg-green-500/10 text-green-400 border-green-500/20',
+  },
+  {
+    id: 'parquet',
+    label: 'Parquet',
+    icon: '⚡',
+    accept: '.parquet',
+    description: 'Apache Parquet columnar format',
+    color: 'text-amber-400',
+    badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+  },
+  {
+    id: 'sqlite',
+    label: 'SQLite',
+    icon: '🗄️',
+    accept: '.db,.sqlite,.sqlite3',
+    description: 'SQLite database file',
+    color: 'text-sky-400',
+    badge: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
+  },
+];
+
 export default function App() {
   const [file, setFile] = useState(null);
+  const [sourceType, setSourceType] = useState('csv');
+  const [tableName, setTableName] = useState('');
   const [metadata, setMetadata] = useState('');
+  
+  // Rich Ingestion Metadata States
+  const [companyDomain, setCompanyDomain] = useState('');
+  const [targetAudience, setTargetAudience] = useState('');
+  const [companyStage, setCompanyStage] = useState('');
+  const [primaryGoal, setPrimaryGoal] = useState('');
+  const [importantKpis, setImportantKpis] = useState('');
+  const [playbookRules, setPlaybookRules] = useState('');
+
   const [useBenchmark, setUseBenchmark] = useState(false);
   const [status, setStatus] = useState('idle'); // idle, uploading, running, done, error
   const [progress, setProgress] = useState({}); // node -> { status, message }
@@ -43,12 +93,107 @@ export default function App() {
   const [slideIdx, setSlideIdx] = useState(0);
   const [lightbox, setLightbox] = useState(null); // { url, title, desc }
   const [errorMessage, setErrorMessage] = useState('');
+  
+  // Chat, Indication, and Sync States
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [expandedInsight, setExpandedInsight] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const fileInputRef = useRef(null);
 
+  const currentSource = SOURCE_TYPES.find(s => s.id === sourceType);
+
   const handleFileChange = (e) => {
     const f = e.target.files[0];
-    if (f && f.name.endsWith('.csv')) setFile(f);
+    if (f) setFile(f);
+  };
+
+  const handleSourceTypeChange = (id) => {
+    setSourceType(id);
+    setFile(null);
+    setTableName('');
+    // Reset the file input so a new file can be chosen for the new type
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const renderMarkdown = (mdText) => {
+    if (!mdText) return null;
+    const lines = mdText.split('\n');
+    let inList = false;
+    let listItems = [];
+    const elements = [];
+    
+    lines.forEach((line, idx) => {
+      const trimmed = line.trim();
+      
+      // Handle bullet lists
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        if (!inList) {
+          inList = true;
+          listItems = [];
+        }
+        listItems.push(trimmed.slice(2));
+        return;
+      } else if (inList) {
+        inList = false;
+        elements.push(
+          <ul key={`list-${idx}`} className="list-disc pl-6 space-y-2 my-4 text-white/70">
+            {listItems.map((item, i) => (
+              <li key={i} className="text-sm font-light leading-relaxed">{item}</li>
+            ))}
+          </ul>
+        );
+      }
+      
+      // Headings
+      if (trimmed.startsWith('# ')) {
+        elements.push(<h1 key={idx} className="text-2xl font-heading font-extrabold uppercase tracking-tight text-white border-b border-white/10 pb-4 mt-8 mb-4">{trimmed.slice(2)}</h1>);
+      } else if (trimmed.startsWith('## ')) {
+        elements.push(<h2 key={idx} className="text-xl font-heading font-bold uppercase tracking-tight text-accent mt-6 mb-3">{trimmed.slice(3)}</h2>);
+      } else if (trimmed.startsWith('### ')) {
+        elements.push(<h3 key={idx} className="text-lg font-heading font-semibold uppercase tracking-tight text-white/90 mt-4 mb-2">{trimmed.slice(4)}</h3>);
+      } else if (trimmed.startsWith('![')) {
+        const match = trimmed.match(/!\[(.*?)\]\((.*?)\)/);
+        if (match) {
+          const caption = match[1];
+          const imgUrl = match[2];
+          elements.push(
+            <div key={idx} className="my-6 rounded-2xl overflow-hidden border border-white/10 bg-white/5 p-4 cursor-pointer" onClick={() => setLightbox({ url: `${API_BASE}${imgUrl}`, title: caption, desc: 'Embedded chart visualization.' })}>
+              <img src={`${API_BASE}${imgUrl}`} className="max-h-[300px] mx-auto object-contain" alt={caption} />
+              <p className="text-[10px] text-center text-white/40 uppercase tracking-widest mt-2">{caption}</p>
+            </div>
+          );
+        }
+      } else if (trimmed.startsWith('|')) {
+        elements.push(
+          <div key={idx} className="font-mono text-xs text-white/60 bg-white/[0.02] border border-white/5 px-4 py-2 my-1 rounded-lg whitespace-nowrap overflow-x-auto">
+            {trimmed}
+          </div>
+        );
+      } else if (trimmed === '') {
+        // empty line
+      } else {
+        elements.push(<p key={idx} className="text-sm text-white/60 leading-relaxed font-light my-3">{trimmed}</p>);
+      }
+    });
+    
+    if (inList) {
+      elements.push(
+        <ul key={`list-end`} className="list-disc pl-6 space-y-2 my-4 text-white/70">
+          {listItems.map((item, i) => (
+            <li key={i} className="text-sm font-light leading-relaxed">{item}</li>
+          ))}
+        </ul>
+      );
+    }
+    
+    return (
+      <div className="space-y-3 max-w-4xl mx-auto bg-black/60 p-10 rounded-[32px] border border-white/5 shadow-2xl text-left">
+        {elements}
+      </div>
+    );
   };
 
   const startAnalysis = async () => {
@@ -56,20 +201,88 @@ export default function App() {
     setStatus('uploading');
     setErrorMessage('');
 
+    // Compile rich metadata into a single string for backward compatibility
+    const compiledMetadata = JSON.stringify({
+      industry: companyDomain || null,
+      company_domain: companyDomain || null,
+      target_audience: targetAudience || null,
+      company_stage: companyStage || null,
+      primary_goal: primaryGoal || null,
+      important_kpis: importantKpis ? importantKpis.split(',').map(s => s.trim()).filter(Boolean) : [],
+      playbook_rules: playbookRules ? playbookRules.split('\n').map(s => s.trim()).filter(Boolean) : [],
+      notes: metadata || null
+    });
+
     const formData = new FormData();
     formData.append('csv_file', file);
-    formData.append('metadata', metadata);
+    formData.append('metadata', compiledMetadata);
     formData.append('benchmark', useBenchmark);
+    formData.append('source_type', sourceType);
+    if (sourceType === 'sqlite' && tableName.trim()) {
+      formData.append('table_name', tableName.trim());
+    }
 
     try {
       const res = await fetch(`${API_BASE}/analyze`, { method: 'POST', body: formData });
       if (!res.ok) throw new Error(await res.text());
       const { run_id } = await res.json();
       setStatus('running');
+      setChatMessages([]);
       connectSSE(run_id);
     } catch (err) {
       setErrorMessage(err.message);
       setStatus('error');
+    }
+  };
+
+  const handleChatSubmit = async (e) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !currentRunId || isChatLoading) return;
+    
+    const userMsg = chatInput.trim();
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setIsChatLoading(true);
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/${currentRunId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      
+      setChatMessages(prev => [...prev, { 
+        role: 'analyst', 
+        text: data.answer, 
+        charts: data.charts 
+      }]);
+    } catch (err) {
+      setChatMessages(prev => [...prev, { 
+        role: 'analyst', 
+        text: `Error executing query: ${err.message}` 
+      }]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const handleSyncDatabase = async () => {
+    if (!currentRunId || isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/sync/${currentRunId}`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      alert(`Database sync triggered successfully! Live updates will begin shortly.`);
+      setStatus('running');
+      setProgress({});
+      connectSSE(data.new_run_id);
+    } catch (err) {
+      alert(`Sync failed: ${err.message}`);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -161,31 +374,174 @@ export default function App() {
                   </p>
                 </div>
 
+                {/* Source Type Selector */}
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-white/30 uppercase tracking-widest">Data Source</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {SOURCE_TYPES.map(src => (
+                      <button
+                        key={src.id}
+                        onClick={() => handleSourceTypeChange(src.id)}
+                        className={`
+                          group flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all duration-300
+                          ${sourceType === src.id
+                            ? 'bg-white/8 border-white/20 shadow-lg'
+                            : 'bg-white/[0.02] border-white/5 hover:border-white/10 hover:bg-white/[0.04]'
+                          }
+                        `}
+                      >
+                        <span className="text-2xl">{src.icon}</span>
+                        <span className={`text-[11px] font-black uppercase tracking-widest ${
+                          sourceType === src.id ? src.color : 'text-white/30'
+                        }`}>{src.label}</span>
+                        <span className="text-[10px] text-white/20 text-center leading-tight hidden lg:block">{src.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Drop zone */}
                 <div
                   onClick={() => fileInputRef.current.click()}
-                  className="group relative h-80 rounded-3xl glass border-2 border-dashed border-white/10 flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-accent/40 hover:bg-white/[0.04] transition-all duration-500"
+                  className="group relative h-64 rounded-3xl glass border-2 border-dashed border-white/10 flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-accent/40 hover:bg-white/[0.04] transition-all duration-500"
                 >
-                  <input type="file" ref={fileInputRef} onChange={handleFileChange} hidden accept=".csv" />
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    hidden
+                    accept={currentSource?.accept}
+                  />
                   <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
                     <FileUp className="w-8 h-8 text-white/40 group-hover:text-white transition-colors" />
                   </div>
                   <div className="text-center">
-                    <p className="text-xl font-medium">{file ? file.name : 'Choose dataset source'}</p>
-                    <p className="text-white/30 text-sm mt-1">{file ? `${(file.size / 1024).toFixed(1)} KB` : 'Drag and drop .csv file here'}</p>
+                    {file ? (
+                      <>
+                        <p className="text-xl font-medium">{file.name}</p>
+                        <div className="flex items-center justify-center gap-2 mt-2">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border ${currentSource?.badge}`}>
+                            {currentSource?.icon} {currentSource?.label}
+                          </span>
+                          <span className="text-white/30 text-sm">{(file.size / 1024).toFixed(1)} KB</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xl font-medium">Choose {currentSource?.label} file</p>
+                        <p className="text-white/30 text-sm mt-1">{currentSource?.description} · {currentSource?.accept}</p>
+                      </>
+                    )}
                   </div>
                 </div>
+
+                {/* SQLite table name input */}
+                {sourceType === 'sqlite' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-2"
+                  >
+                    <label className="text-xs font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
+                      🗄️ Table Name <span className="text-white/20 normal-case font-normal">(optional — leave blank to auto-detect)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={tableName}
+                      onChange={e => setTableName(e.target.value)}
+                      placeholder="e.g. sales_data"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-sky-500/50 focus:bg-white/[0.08] transition-all font-mono"
+                    />
+                  </motion.div>
+                )}
               </div>
 
-              <div className="glass rounded-3xl p-8 space-y-8 sticky top-32">
-                <div className="space-y-4">
+              <div className="glass rounded-3xl p-8 space-y-6 sticky top-8 max-h-[85vh] overflow-y-auto scrollbar-thin">
+                <div className="border-b border-white/5 pb-4">
                   <label className="text-xs font-bold text-white/30 uppercase tracking-widest flex items-center gap-2">
-                    <Settings className="w-3 h-3" /> Analysis Parameters
+                    <Settings className="w-3 h-3 text-accent" /> Company Profile & Parameters
                   </label>
+                  <p className="text-[10px] text-white/20 mt-1">Ground the AI Analyst in your business context and playbook constraints.</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Company Domain</label>
+                    <input
+                      type="text"
+                      value={companyDomain}
+                      onChange={e => setCompanyDomain(e.target.value)}
+                      placeholder="e.g. B2B SaaS"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-accent/40"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Target Audience</label>
+                    <input
+                      type="text"
+                      value={targetAudience}
+                      onChange={e => setTargetAudience(e.target.value)}
+                      placeholder="e.g. Enterprise IT"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-accent/40"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Company Stage</label>
+                    <select
+                      value={companyStage}
+                      onChange={e => setCompanyStage(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-accent/40 text-white/80"
+                    >
+                      <option value="" className="bg-black">Select Stage...</option>
+                      <option value="Seed" className="bg-black">Seed / Pre-revenue</option>
+                      <option value="Series A" className="bg-black">Series A / Growth</option>
+                      <option value="Enterprise" className="bg-black">Enterprise Scale</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Focus KPIs (Comma Sep)</label>
+                    <input
+                      type="text"
+                      value={importantKpis}
+                      onChange={e => setImportantKpis(e.target.value)}
+                      placeholder="e.g. ARR, Churn, LTV"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-accent/40 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Primary Business Goal</label>
+                  <input
+                    type="text"
+                    value={primaryGoal}
+                    onChange={e => setPrimaryGoal(e.target.value)}
+                    placeholder="e.g. Increase ARR and reduce churn in Q3"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-accent/40"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Analyst Playbook Context (One per line)</label>
+                  <textarea
+                    value={playbookRules}
+                    onChange={e => setPlaybookRules(e.target.value)}
+                    placeholder="e.g. Ignore test accounts with high duplicates&#10;Fiscal calendar starts in April"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 min-h-[70px] text-xs focus:outline-none focus:border-accent/40 font-light"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-white/40 uppercase tracking-wider">General Ingestion Notes</label>
                   <textarea
                     value={metadata}
                     onChange={(e) => setMetadata(e.target.value)}
-                    placeholder="Describe business model, key goals, or specific KPIs to track..."
-                    className="w-100% w-full bg-white/5 border border-white/10 rounded-2xl p-4 min-h-[160px] text-sm focus:outline-none focus:border-accent/50 focus:bg-white/[0.08] transition-all"
+                    placeholder="Provide additional background, outliers context, etc..."
+                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 min-h-[70px] text-xs focus:outline-none focus:border-accent/40 font-light"
                   />
                 </div>
 
@@ -269,8 +625,25 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               className="space-y-12"
             >
+              {/* Suite Header with Sync Option */}
+              <div className="flex items-center justify-between border-b border-white/5 pb-6">
+                <div className="space-y-1">
+                  <h2 className="text-3xl font-heading font-black tracking-tight uppercase">Analysis Suite</h2>
+                  <p className="text-xs text-white/30 font-light">Interactive reporting dashboard and live analytical sandbox session.</p>
+                </div>
+                {results.schema_summary?.source_type === 'sqlite' && (
+                  <button
+                    onClick={handleSyncDatabase}
+                    disabled={isSyncing}
+                    className="flex items-center gap-2 bg-sky-500/10 border border-sky-500/20 text-sky-400 px-5 py-2.5 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-sky-500/20 disabled:opacity-30 active:scale-95 transition-all"
+                  >
+                    🔄 {isSyncing ? 'Syncing...' : 'Sync Active DB'}
+                  </button>
+                )}
+              </div>
+
               {/* Top Stats Bar */}
-              <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
                 {[
                   { label: 'Analysed Rows', value: results.schema_summary.row_count, icon: <ChevronRight className="w-3 h-3" /> },
                   { label: 'Dimensions', value: results.schema_summary.column_count, icon: <ChevronRight className="w-3 h-3" /> },
@@ -278,39 +651,53 @@ export default function App() {
                   { label: 'Visual Cards', value: results.charts.length, icon: <ChevronRight className="w-3 h-3" /> },
                   { label: 'Strategic Ops', value: results.recommendations.length, icon: <ChevronRight className="w-3 h-3" /> },
                   { label: 'Domain', value: results.business_context, icon: <ChevronRight className="w-3 h-3" />, isText: true },
+                  {
+                    label: 'Source',
+                    value: (results.schema_summary?.source_type || sourceType || 'csv').toUpperCase(),
+                    icon: <span>{SOURCE_TYPES.find(s => s.id === (results.schema_summary?.source_type || sourceType))?.icon || '📄'}</span>,
+                    isText: true,
+                    badge: SOURCE_TYPES.find(s => s.id === (results.schema_summary?.source_type || sourceType))?.badge,
+                  },
                 ].map((stat, i) => (
-                  <div key={i} className="glass rounded-2xl p-5 flex flex-col items-center justify-center text-center space-y-2">
+                  <div key={i} className="glass rounded-2xl p-5 flex flex-col items-center justify-center text-center space-y-2 text-white/90">
                     <p className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] flex items-center gap-1">
                       {stat.icon} {stat.label}
                     </p>
-                    <p className={`font-heading font-black tracking-tighter ${stat.isText ? 'text-sm' : 'text-2xl'}`}>
+                    <p className={`font-heading font-black tracking-tighter ${
+                      stat.badge
+                        ? `text-[10px] px-2 py-0.5 rounded-md border ${stat.badge}`
+                        : stat.isText ? 'text-sm' : 'text-2xl'
+                    }`}>
                       {stat.value || '—'}
                     </p>
                   </div>
                 ))}
               </div>
 
-              {/* Major Tabs */}
-              <div className="space-y-8">
-                <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white/5 border border-white/5 w-fit mx-auto overflow-x-auto">
-                  {[
-                    { id: 'insights', label: 'Findings', icon: <Target className="w-4 h-4" /> },
-                    { id: 'visuals', label: 'Data Visuals', icon: <BarChart3 className="w-4 h-4" /> },
-                    { id: 'strategy', label: 'Strategy', icon: <ArrowRight className="w-4 h-4" /> },
-                    { id: 'deck', label: 'Presentation', icon: <Presentation className="w-4 h-4" /> },
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`
-                        px-8 py-3 rounded-xl flex items-center gap-3 text-sm font-bold tracking-tight transition-all
-                        ${activeTab === tab.id ? 'bg-white text-black shadow-lg shadow-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}
-                      `}
-                    >
-                      {tab.icon} {tab.label}
-                    </button>
-                  ))}
-                </div>
+              {/* Main Workspace grid with Sidebar Chat */}
+              <div className="grid lg:grid-cols-[1fr,360px] gap-8 items-start">
+                <div className="space-y-8">
+                  {/* Major Tabs */}
+                  <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white/5 border border-white/5 w-fit overflow-x-auto">
+                    {[
+                      { id: 'insights', label: 'Findings', icon: <Target className="w-4 h-4" /> },
+                      { id: 'report', label: 'Executive Report', icon: <CheckCircle2 className="w-4 h-4" /> },
+                      { id: 'visuals', label: 'Data Visuals', icon: <BarChart3 className="w-4 h-4" /> },
+                      { id: 'strategy', label: 'Strategy', icon: <ArrowRight className="w-4 h-4" /> },
+                      { id: 'deck', label: 'Presentation', icon: <Presentation className="w-4 h-4" /> },
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`
+                          px-6 py-2.5 rounded-xl flex items-center gap-2 text-xs font-bold tracking-tight transition-all
+                          ${activeTab === tab.id ? 'bg-white text-black shadow-lg shadow-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}
+                        `}
+                      >
+                        {tab.icon} {tab.label}
+                      </button>
+                    ))}
+                  </div>
 
                 <div className="mt-8">
                   {activeTab === 'insights' && (
@@ -341,14 +728,60 @@ export default function App() {
                             )}
                             <p className="text-sm text-white/50 leading-relaxed font-light">{insight.description}</p>
                           </div>
-                          {insight.supporting_data && (
-                            <div className="mt-8 pt-6 border-t border-white/5 text-[10px] font-bold text-white/20 uppercase tracking-widest">
-                              Source: {insight.supporting_data}
+                           {insight.supporting_data && (
+                            <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-white/20 uppercase tracking-widest">
+                              <span>Source: {insight.supporting_data}</span>
+                              {insight.data_proof && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedInsight(expandedInsight === i ? null : i);
+                                  }}
+                                  className="text-[9px] font-black text-accent hover:underline flex items-center gap-1 focus:outline-none normal-case tracking-normal"
+                                >
+                                  {expandedInsight === i ? 'Hide Data Proof' : 'View Data Proof'}
+                                </button>
+                              )}
                             </div>
+                          )}
+
+                          {insight.data_proof && expandedInsight === i && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              className="mt-4 space-y-3 font-mono text-[10px] text-white/60 bg-black/60 p-4 rounded-2xl border border-white/5 overflow-x-auto w-full text-left"
+                            >
+                              <div className="space-y-1">
+                                <p className="text-accent uppercase tracking-widest text-[8px] font-bold">Executed Code:</p>
+                                <pre className="text-white/80 overflow-x-auto whitespace-pre-wrap font-mono leading-tight">{insight.data_proof.code}</pre>
+                              </div>
+                              {insight.data_proof.stdout && (
+                                <div className="space-y-1 pt-2 border-t border-white/5">
+                                  <p className="text-emerald-400 uppercase tracking-widest text-[8px] font-bold">Console Output:</p>
+                                  <pre className="text-white/70 overflow-x-auto whitespace-pre-wrap font-mono leading-tight">{insight.data_proof.stdout}</pre>
+                                </div>
+                              )}
+                            </motion.div>
                           )}
                         </motion.div>
                       ))}
                     </div>
+                  )}
+
+                  {activeTab === 'report' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="space-y-6"
+                    >
+                      {results.executive_report ? (
+                        renderMarkdown(results.executive_report)
+                      ) : (
+                        <div className="text-center py-20 glass rounded-[40px] border border-white/5">
+                          <p className="text-white/30 font-mono text-sm tracking-widest uppercase">Written report is generating or not available.</p>
+                        </div>
+                      )}
+                    </motion.div>
                   )}
 
                   {activeTab === 'visuals' && (
@@ -468,6 +901,79 @@ export default function App() {
                       )}
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Right Column: Persistent Obsidian Copilot Chat Sidebar */}
+                <div className="glass rounded-[32px] border border-white/5 p-6 flex flex-col h-[650px] justify-between sticky top-8">
+                  <div className="space-y-2 border-b border-white/5 pb-4 text-left">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                      <h3 className="text-sm font-heading font-black uppercase tracking-wider text-white">Obsidian Copilot</h3>
+                    </div>
+                    <p className="text-[10px] text-white/30 font-light">Ask questions, segment categories, or request new charts dynamically.</p>
+                  </div>
+                  
+                  {/* Messages Area */}
+                  <div className="flex-1 overflow-y-auto my-4 space-y-4 pr-2 scrollbar-thin flex flex-col">
+                    {chatMessages.length === 0 ? (
+                      <div className="my-auto flex flex-col items-center justify-center text-center p-6 space-y-3">
+                        <span className="text-3xl">🤖</span>
+                        <p className="text-xs text-white/40 leading-relaxed font-light">"How can I help you explore this data? Ask me to segment tier groups, check correlations, or plot new visuals."</p>
+                      </div>
+                    ) : (
+                      chatMessages.map((msg, i) => (
+                        <div key={i} className={`flex flex-col gap-1.5 text-left ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                          <div className={`px-4 py-3 rounded-2xl text-xs leading-relaxed max-w-[90%] font-light ${
+                            msg.role === 'user' 
+                              ? 'bg-accent text-white rounded-tr-none' 
+                              : 'bg-white/5 border border-white/5 text-white/80 rounded-tl-none'
+                          }`}>
+                            <p className="whitespace-pre-wrap">{msg.text}</p>
+                            
+                            {msg.charts && msg.charts.map((c, j) => (
+                              <div 
+                                key={j} 
+                                className="mt-3 rounded-xl overflow-hidden border border-white/10 bg-black/40 p-2 cursor-pointer" 
+                                onClick={() => setLightbox({ url: `${API_BASE}${c.url}`, title: c.title, desc: 'Generated via Interactive Chat Q&A.' })}
+                              >
+                                <img src={`${API_BASE}${c.url}`} className="w-full object-contain max-h-[140px] rounded-lg" alt="Chat Chart" />
+                                <p className="text-[8px] font-bold text-center text-white/45 uppercase tracking-widest mt-1.5">{c.title}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <span className="text-[8px] font-mono text-white/20 uppercase tracking-widest px-1">
+                            {msg.role === 'user' ? 'User' : 'Obsidian Analyst'}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                    {isChatLoading && (
+                      <div className="flex items-center gap-2 text-white/30 text-[10px] font-mono uppercase tracking-widest animate-pulse mt-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-accent animate-ping" />
+                        Analyst is querying...
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Chat Input form */}
+                  <form onSubmit={handleChatSubmit} className="flex gap-2 pt-4 border-t border-white/5">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      disabled={isChatLoading}
+                      placeholder="Ask about plan tiers, ROI, segments..."
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-accent/40 focus:bg-white/[0.08] transition-all font-light text-white/80"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim() || isChatLoading}
+                      className="px-4 rounded-xl bg-white text-black font-bold text-xs hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:hover:scale-100 flex items-center justify-center shrink-0"
+                    >
+                      Send
+                    </button>
+                  </form>
                 </div>
               </div>
             </motion.div>

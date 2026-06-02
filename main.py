@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import OUTPUT_DIR, CHARTS_DIR, LANGSMITH_ENABLED, LANGCHAIN_PROJECT
 from tools.pptx_exporter import export_pptx
+from tools.data_loader import detect_source_type
 from langsmith import Client
 from graph import analyst_graph
 from logger import log, trace
@@ -144,6 +145,18 @@ def print_results(final_state: dict):
 
 
 def main():
+    # Force UTF-8 stdout/stderr on Windows/CLI to prevent UnicodeEncodeErrors when printing emojis
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+    if hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(
         description="Autonomous Data Analyst Agent",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -179,9 +192,19 @@ def main():
     log.info("  LangSmith: %s", "enabled" if LANGSMITH_ENABLED else "disabled")
     log.info("=" * 60)
 
+    # Resolve source type from the file extension
+    try:
+        source_type = detect_source_type(csv_path)
+    except ValueError:
+        source_type = "csv"  # fallback — data_loader will error with a clear message
+
+    source_config: dict = {"path": csv_path}
+
     # Build initial state
     initial_state: dict = {
         "file_path": csv_path,
+        "source_type": source_type,
+        "source_config": source_config,
         "raw_metadata_input": metadata,
         "parsed_metadata": None,
         "dataframe_summary": {},
@@ -196,15 +219,22 @@ def main():
         "benchmark_enabled": args.benchmark,
         "benchmark_results": None,
         "presentation_payload": None,
+        "parquet_path": None,
         "trace_log": [],
     }
 
     # Run the graph
     log.info("Starting analysis pipeline...")
-    final_state = analyst_graph.invoke(initial_state)
-
-    # Display results
-    print_results(final_state)
+    try:
+        final_state = analyst_graph.invoke(initial_state, config={"recursion_limit": 100})
+        # Display results
+        print_results(final_state)
+    finally:
+        if "final_state" in locals() and final_state.get("parquet_path"):
+            try:
+                os.unlink(final_state["parquet_path"])
+            except Exception:
+                pass
     log.info("Analysis complete!")
 
 

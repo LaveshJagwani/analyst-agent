@@ -18,6 +18,7 @@ import seaborn as sns
 
 from langchain_core.tools import tool
 from config import EXECUTION_TIMEOUT_SECONDS, CHARTS_DIR
+from design_systems import apply_plot_theme
 
 
 def _timeout_handler(signum, frame):
@@ -25,32 +26,31 @@ def _timeout_handler(signum, frame):
 
 
 @tool
-def execute_python(code: str, csv_path: str, step_id: int) -> dict:
+def execute_python(code: str, parquet_path: str, step_id: int) -> dict:
     """Execute Python analysis code in a sandboxed environment.
 
     The code has access to: pandas (pd), numpy (np), matplotlib.pyplot (plt),
     seaborn (sns), and a pre-loaded DataFrame called `df`.
 
+    The DataFrame is loaded from a standardised Parquet temp file so this tool
+    is completely format-agnostic — it does not need to know the original
+    source type (CSV, Excel, SQLite, etc.).
+
     Any matplotlib figures created are automatically saved to the charts directory.
 
     Args:
         code: Python code to execute.
-        csv_path: Path to the CSV file (loaded as `df`).
+        parquet_path: Path to the standardised Parquet temp file (loaded as `df`).
         step_id: Current analysis step ID (used for naming charts).
 
     Returns:
         dict with keys: stdout, result, charts, error
     """
-    # Prepare namespace with allowed libraries
-    df = pd.read_csv(csv_path)
+    # Load the pre-standardised DataFrame — fast columnar read, format-agnostic
+    df = pd.read_parquet(parquet_path)
 
-    # Try to parse date columns
-    for col in df.columns:
-        if df[col].dtype == "object":
-            try:
-                df[col] = pd.to_datetime(df[col])
-            except (ValueError, TypeError):
-                pass
+    # Apply the gorgeous enterprise plotting theme
+    apply_plot_theme()
 
     namespace: dict[str, Any] = {
         "pd": pd,

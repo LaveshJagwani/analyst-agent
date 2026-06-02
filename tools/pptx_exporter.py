@@ -45,7 +45,7 @@ def render_title_slide(prs, slide_data: dict, design_spec: dict):
     t.text_frame.paragraphs[0].font.bold = True
     
     # Subtitle
-    if slide.placeholders.count > 1:
+    if len(slide.placeholders) > 1:
         s = slide.placeholders[1]
         s.text = slide_data.get("subtitle", "")
         s.text_frame.paragraphs[0].font.color.rgb = accent_color

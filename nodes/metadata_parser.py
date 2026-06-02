@@ -21,6 +21,9 @@ Return ONLY a valid JSON object with these fields (use null if unknown):
   "primary_goal": str or null,
   "region": str or null,
   "important_kpis": [list of strings] or [],
+  "company_domain": str or null,
+  "target_audience": str or null,
+  "playbook_rules": [list of strings] or [],
   "notes": str or null
 }}
 

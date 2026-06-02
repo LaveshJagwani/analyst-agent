@@ -93,7 +93,7 @@ def code_executor_node(state: AnalysisState) -> dict:
     # Execute
     exec_result = execute_python.invoke({
         "code": code,
-        "csv_path": state["file_path"],
+        "parquet_path": state["parquet_path"],
         "step_id": step_id,
     })
 

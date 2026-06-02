@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from config import CHARTS_DIR, OUTPUT_DIR
 from tools.pptx_exporter import export_pptx
+from tools.data_loader import detect_source_type
 
 app = FastAPI(title="Autonomous Data Analyst API", version="1.0.0")
 
@@ -53,7 +54,14 @@ def _sse_event(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-def _run_analysis(run_id: str, csv_path: str, metadata: Optional[str], benchmark: bool):
+def _run_analysis(
+    run_id: str,
+    csv_path: str,
+    source_type: str,
+    source_config: dict,
+    metadata: Optional[str],
+    benchmark: bool,
+):
     """Execute the graph in a background thread and push SSE events."""
     from graph import analyst_graph
     from logger import log
@@ -68,10 +76,13 @@ def _run_analysis(run_id: str, csv_path: str, metadata: Optional[str], benchmark
 
         initial_state = {
             "file_path": csv_path,
+            "source_type": source_type,
+            "source_config": source_config,
             "raw_metadata_input": metadata,
             "benchmark_enabled": benchmark,
             "execution_results": {},
             "generated_charts": [],
+            "parquet_path": None,
             "trace_log": [],
         }
 
@@ -80,7 +91,7 @@ def _run_analysis(run_id: str, csv_path: str, metadata: Optional[str], benchmark
         accumulated = dict(initial_state)
         final_state = accumulated
 
-        for chunk in analyst_graph.stream(initial_state, stream_mode="updates"):
+        for chunk in analyst_graph.stream(initial_state, stream_mode="updates", config={"recursion_limit": 100}):
             # chunk is {node_name: {state_keys_updated...}}
             for node_name, delta in chunk.items():
                 accumulated.update(delta)
@@ -130,6 +141,38 @@ def _run_analysis(run_id: str, csv_path: str, metadata: Optional[str], benchmark
                 "step_title": step_titles.get(sid, ""),
             })
 
+        # Enrich insights with visual "Insight Provenance" data proofs
+        raw_insights = final_state.get("validated_insights", [])
+        enriched_insights = []
+        for ins in raw_insights:
+            enriched_ins = dict(ins)
+            supporting_str = str(ins.get("supporting_data", ""))
+            
+            step_id_found = None
+            for part in supporting_str.split():
+                clean_part = "".join(c for c in part if c.isdigit())
+                if clean_part:
+                    step_id_found = clean_part
+                    break
+            
+            if not step_id_found and "_" in supporting_str:
+                for part in supporting_str.split("_"):
+                    clean_part = "".join(c for c in part if c.isdigit())
+                    if clean_part:
+                        step_id_found = clean_part
+                        break
+                        
+            if step_id_found and step_id_found in execution_results:
+                step_res = execution_results[step_id_found]
+                enriched_ins["data_proof"] = {
+                    "code": step_res.get("code", ""),
+                    "stdout": step_res.get("stdout", "")[:1000]
+                }
+            else:
+                enriched_ins["data_proof"] = None
+                
+            enriched_insights.append(enriched_ins)
+
         result = {
             "business_context": final_state.get("business_context", ""),
             "parsed_metadata": final_state.get("parsed_metadata", {}),
@@ -138,14 +181,16 @@ def _run_analysis(run_id: str, csv_path: str, metadata: Optional[str], benchmark
                 "column_count": final_state.get("dataframe_summary", {}).get("column_count", 0),
                 "numeric_columns": final_state.get("schema", {}).get("numeric_columns", []),
                 "categorical_columns": final_state.get("schema", {}).get("categorical_columns", []),
+                "source_type": final_state.get("dataframe_summary", {}).get("source_type", source_type),
             },
             "analysis_plan": final_state.get("analysis_plan", []),
-            "insights": final_state.get("validated_insights", []),
+            "insights": enriched_insights,
             "recommendations": final_state.get("recommendations", []),
             "charts": chart_urls,
             "step_titles": step_titles,
             "benchmark": final_state.get("benchmark_results"),
             "presentation": final_state.get("presentation_payload", {}),
+            "executive_report": final_state.get("executive_report", ""),
         }
 
         # Save full result to disk
@@ -171,11 +216,17 @@ def _run_analysis(run_id: str, csv_path: str, metadata: Optional[str], benchmark
         push("error", {"message": str(e)})
 
     finally:
-        # Clean up temp CSV
-        try:
-            os.unlink(csv_path)
-        except Exception:
-            pass
+        # Clean up only the raw original upload file
+        if csv_path:
+            try:
+                os.unlink(csv_path)
+            except Exception:
+                pass
+        # Store the Parquet file path in runs dictionary for persistent chat Q&A
+        if "accumulated" in locals() and accumulated.get("parquet_path"):
+            run["parquet_path"] = accumulated["parquet_path"]
+        elif "final_state" in locals() and final_state.get("parquet_path"):
+            run["parquet_path"] = final_state["parquet_path"]
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -185,24 +236,46 @@ async def analyze(
     csv_file: UploadFile = File(...),
     metadata: Optional[str] = Form(None),
     benchmark: bool = Form(False),
+    table_name: Optional[str] = Form(None),
 ):
-    """Start an analysis run. Returns a run_id for streaming and results."""
-    if not csv_file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+    """
+    Start an analysis run.
+    Accepts CSV, Excel (.xlsx/.xls), Parquet, and SQLite (.db/.sqlite/.sqlite3) files.
+    Returns a run_id for streaming and results.
+    """
+    filename = csv_file.filename or ""
+    try:
+        source_type = detect_source_type(filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Save CSV to a temp file
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+    # Preserve the original extension so data_loader can read it correctly
+    ext = os.path.splitext(filename)[-1].lower()
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
     content = await csv_file.read()
     tmp.write(content)
     tmp.close()
 
+    # Build source-specific config
+    source_config: dict = {"path": tmp.name}
+    if source_type == "sqlite" and table_name:
+        source_config["table"] = table_name
+
     run_id = str(uuid.uuid4())
-    runs[run_id] = {"status": "running", "events": [], "result": None}
+    runs[run_id] = {
+        "status": "running",
+        "events": [],
+        "result": None,
+        "source_type": source_type,
+        "source_config": source_config,
+        "metadata": metadata,
+        "benchmark": benchmark
+    }
 
     # Run in background thread (graph is synchronous/blocking)
     thread = threading.Thread(
         target=_run_analysis,
-        args=(run_id, tmp.name, metadata, benchmark),
+        args=(run_id, tmp.name, source_type, source_config, metadata, benchmark),
         daemon=True,
     )
     thread.start()
@@ -308,6 +381,181 @@ async def get_presentation(run_id: str):
         filename=f"Analysis_Report_{run_id[:8]}.pptx",
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
+
+
+from pydantic import BaseModel
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+@app.post("/api/chat/{run_id}")
+async def chat(run_id: str, request: ChatRequest):
+    """
+    Interactive Chat Q&A: Runs conversational Python code in the sandbox 
+    against the preserved standardized Parquet dataset snapshot to answer questions.
+    """
+    if run_id not in runs:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    run = runs[run_id]
+    
+    parquet_path = run.get("parquet_path")
+    if not parquet_path or not os.path.exists(parquet_path):
+        raise HTTPException(
+            status_code=400, 
+            detail="No active dataset session found for this run."
+        )
+
+    from config import get_llm, wait_for_quota
+    from tools.sandbox_executor import execute_python
+    import pandas as pd
+    
+    try:
+        # Load small preview to extract accurate schema to guide the LLM
+        df = pd.read_parquet(parquet_path)
+        columns_str = str(list(df.columns))
+        numeric_cols = list(df.select_dtypes(include="number").columns)
+        date_cols = list(df.select_dtypes(include="datetime").columns)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read dataset: {e}")
+
+    # Step 1: Prompt LLM to write the query Python script
+    code_prompt = f"""\
+You are an expert Python data analyst. Write a clean Python code snippet to query the pre-loaded pandas DataFrame `df` and help answer the user's question.
+
+User Question: {request.message}
+
+DataFrame Info:
+- Columns: {columns_str}
+- Numeric Columns: {numeric_cols}
+- Date Columns: {date_cols}
+
+RULES:
+- Assign the key result, answer value, or formatted summary to a variable called `result`.
+- If a chart is requested or highly useful to answer their question, use plt.figure() to plot it and add titles/labels. Do NOT call plt.show().
+- Use plt.tight_layout() before plotting ends.
+- Print clean, helpful intermediate values to stdout using print().
+- Return ONLY executable Python code. No explanations, no markdown code fences, no generic chat comments.
+"""
+    wait_for_quota()
+    llm = get_llm(temperature=0.1)
+    
+    try:
+        code_response = llm.invoke(code_prompt)
+        code = code_response.content.strip()
+        
+        if code.startswith("```"):
+            lines = code.split("\n")
+            code = "\n".join(lines[1:])
+            if code.endswith("```"):
+                code = code[:-3].strip()
+                
+        # Generate a unique chat step ID so charts don't overwrite analysis ones
+        chat_step_id = f"chat_{uuid.uuid4().hex[:8]}"
+
+        # Execute code in sandbox
+        exec_result = execute_python.invoke({
+            "code": code,
+            "parquet_path": parquet_path,
+            "step_id": chat_step_id
+        })
+    except Exception as ce:
+        raise HTTPException(status_code=500, detail=f"Query execution initialization failed: {ce}")
+
+    stdout = exec_result.get("stdout", "")
+    res_val = str(exec_result.get("result", ""))
+    charts = exec_result.get("charts", [])
+    error = exec_result.get("error")
+
+    # Step 2: Formulate the conversational explanation based on execution stdout/result/charts
+    explain_prompt = f"""\
+You are an elite boardroom business advisor. Formulate a direct, professional, conversational answer to the user's question using the outputs of the Python script that was executed against the dataset.
+
+User Question: {request.message}
+Executed Code:
+```python
+{code}
+```
+Console Outputs (Stdout):
+{stdout}
+Returned Value:
+{res_val}
+Error (if any):
+{error}
+
+INSTRUCTIONS:
+- Explain what the numbers show clearly and factually.
+- Do not use exclamation marks.
+- If there is an error, explain it politely and suggest what they can query instead.
+- If a chart was successfully generated, mention that the visualization is displayed.
+- Keep your response direct, precise, and conversational.
+"""
+    wait_for_quota()
+    explain_response = llm.invoke(explain_prompt)
+    answer = explain_response.content.strip()
+
+    # Re-map chart path to web URL
+    chart_urls = []
+    for c in charts:
+        fname = Path(c["path"]).name
+        chart_urls.append({
+            "url": f"/charts/{fname}",
+            "title": c.get("title", "Chat Chart")
+        })
+
+    return JSONResponse({
+        "answer": answer,
+        "charts": chart_urls,
+        "error": error
+    })
+
+
+@app.post("/api/sync/{run_id}")
+async def sync_database(run_id: str):
+    """
+    Active Sync: Triggers a fresh database sync and analysis run
+    for SQLite database sources, refreshing the active session results.
+    """
+    if run_id not in runs:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    run = runs[run_id]
+
+    source_type = run.get("source_type")
+    source_config = run.get("source_config")
+    metadata = run.get("metadata")
+    benchmark = run.get("benchmark")
+
+    if source_type != "sqlite":
+        raise HTTPException(
+            status_code=400, 
+            detail="Active syncing is only supported for database (SQLite) sources."
+        )
+
+    # Re-trigger a fresh background thread run utilizing the exact same config
+    new_run_id = str(uuid.uuid4())
+    runs[new_run_id] = {
+        "status": "running",
+        "events": [],
+        "result": None,
+        "source_type": source_type,
+        "source_config": source_config,
+        "metadata": metadata,
+        "benchmark": benchmark
+    }
+
+    # Run in background
+    thread = threading.Thread(
+        target=_run_analysis,
+        args=(new_run_id, source_config.get("path"), source_type, source_config, metadata, benchmark),
+        daemon=True,
+    )
+    thread.start()
+
+    return JSONResponse({
+        "message": "Sync triggered successfully.",
+        "new_run_id": new_run_id
+    })
+
 
 if __name__ == "__main__":
     import uvicorn
