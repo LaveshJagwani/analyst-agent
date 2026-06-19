@@ -16,7 +16,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from config import OUTPUT_DIR, CHARTS_DIR, LANGSMITH_ENABLED, LANGCHAIN_PROJECT
-from tools.pptx_exporter import export_pptx
 from tools.data_loader import detect_source_type
 from langsmith import Client
 from graph import analyst_graph
@@ -105,28 +104,6 @@ def print_results(final_state: dict):
         print(f"📈  Generated Charts ({len(charts)}):")
         for c in charts:
             print(f"  📄 {c}")
-        print()
-
-    # Presentation
-    pres = final_state.get("presentation_payload")
-    if pres:
-        slides = pres.get("slides", [])
-        print(f"🎬  Presentation: \"{pres.get('title', 'N/A')}\" — {len(slides)} slides")
-
-        # Save presentation JSON
-        json_path = OUTPUT_DIR / "presentation.json"
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(pres, f, indent=2, default=str)
-        print(f"  💾 Data saved to: {json_path}")
-
-        # Generate PPTX
-        pptx_path = OUTPUT_DIR / "presentation.pptx"
-        try:
-            # We wrap the payload back into a result-like dict for the exporter
-            export_pptx({"presentation": pres}, pptx_path, charts_dir=CHARTS_DIR)
-            print(f"  📊 Presentation generated: {pptx_path}")
-        except Exception as e:
-            print(f"  ❌ Presentation generation failed: {e}")
         print()
 
     # Trace
@@ -218,7 +195,6 @@ def main():
         "recommendations": [],
         "benchmark_enabled": args.benchmark,
         "benchmark_results": None,
-        "presentation_payload": None,
         "parquet_path": None,
         "trace_log": [],
     }

@@ -52,10 +52,6 @@ def wait_for_quota():
 def get_llm(temperature: float = 0.1):
     """Return a configured Groq LLM instance."""
     if not GROQ_API_KEY:
-        # Fallback to Google if Groq key missing (unlikely given request)
-        if GOOGLE_API_KEY:
-             from langchain_google_genai import ChatGoogleGenerativeAI
-             return ChatGoogleGenerativeAI(google_api_key=GOOGLE_API_KEY, model="gemini-flash-latest", temperature=temperature)
         raise ValueError("GROQ_API_KEY not found in .env. Please get one from console.groq.com.")
 
     return ChatGroq(

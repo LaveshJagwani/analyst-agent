@@ -117,13 +117,24 @@ def execute_python(code: str, parquet_path: str, step_id: int) -> dict:
         # Extract result
         result_value = namespace.get("result")
         if isinstance(result_value, pd.DataFrame):
-            result_value = result_value.head(20).to_dict(orient="records")
+            result_value = result_value.head(8).to_dict(orient="records")
         elif isinstance(result_value, pd.Series):
-            result_value = result_value.head(20).to_dict()
+            result_value = result_value.head(8).to_dict()
+
+        import json
+        serialized_result = None
+        if result_value is not None:
+            try:
+                if isinstance(result_value, str):
+                    serialized_result = result_value
+                else:
+                    serialized_result = json.dumps(result_value)
+            except Exception:
+                serialized_result = str(result_value)
 
         return {
             "stdout": stdout_buffer.getvalue(),
-            "result": str(result_value) if result_value is not None else None,
+            "result": serialized_result,
             "charts": charts_metadata, # Return list of dicts now
             "error": None,
         }

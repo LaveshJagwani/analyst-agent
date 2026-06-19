@@ -22,7 +22,6 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import CHARTS_DIR, OUTPUT_DIR
-from tools.pptx_exporter import export_pptx
 from tools.data_loader import detect_source_type
 
 app = FastAPI(title="Autonomous Data Analyst API", version="1.0.0")
@@ -94,10 +93,11 @@ def _run_analysis(
         for chunk in analyst_graph.stream(initial_state, stream_mode="updates", config={"recursion_limit": 100}):
             # chunk is {node_name: {state_keys_updated...}}
             for node_name, delta in chunk.items():
-                accumulated.update(delta)
+                if delta:
+                    accumulated.update(delta)
                 final_state = accumulated
 
-                if node_name == "code_executor":
+                if node_name == "code_executor" and delta:
                     step_idx = delta.get("current_step_index", accumulated.get("current_step_index", 0))
                     plan = accumulated.get("analysis_plan", [])
                     total = len(plan)
@@ -109,6 +109,29 @@ def _run_analysis(
                         "step_title": title,
                         "message": f"Step {step_idx}/{total}: {title}",
                     })
+                    
+                    # Push live step execution charts and findings to UI
+                    execution_results = delta.get("execution_results", {}) or accumulated.get("execution_results", {})
+                    step_key = str(step_idx)
+                    if step_key in execution_results:
+                        res = execution_results[step_key]
+                        charts = []
+                        for c_info in res.get("charts", []):
+                            from pathlib import Path as _Path
+                            fname = _Path(c_info["path"]).name if isinstance(c_info, dict) else _Path(c_info).name
+                            charts.append({
+                                "url": f"/charts/{fname}",
+                                "title": c_info.get("title", f"Step {step_idx} Visual") if isinstance(c_info, dict) else f"Step {step_idx} Visual"
+                            })
+                        
+                        push("step_complete", {
+                            "step_id": step_idx,
+                            "title": res.get("title"),
+                            "objective": plan[step_idx - 1].get("objective") if plan and 0 < step_idx <= len(plan) else "",
+                            "result_summary": str(res.get("result"))[:3000] if res.get("result") else "",
+                            "charts": charts,
+                            "error": res.get("error")
+                        })
                 else:
                     push("node_complete", {
                         "node": node_name,
@@ -189,7 +212,6 @@ def _run_analysis(
             "charts": chart_urls,
             "step_titles": step_titles,
             "benchmark": final_state.get("benchmark_results"),
-            "presentation": final_state.get("presentation_payload", {}),
             "executive_report": final_state.get("executive_report", ""),
         }
 
@@ -197,23 +219,18 @@ def _run_analysis(
         result_path = OUTPUT_DIR / f"result_{run_id}.json"
         result_path.write_text(json.dumps(result, indent=2, default=str))
 
-        # Generate Presentation PPTX
-        pptx_path = OUTPUT_DIR / f"presentation_{run_id}.pptx"
-        try:
-            pres_payload = final_state.get("presentation_payload", {})
-            export_pptx({"presentation": pres_payload}, pptx_path, charts_dir=CHARTS_DIR)
-            result["presentation_url"] = f"/presentation/{run_id}"
-        except Exception as pe:
-            log.error("Failed to generate PPTX for run %s: %s", run_id, str(pe))
-
         run["result"] = result
         run["status"] = "done"
         push("done", {"message": "Analysis complete!"})
 
     except Exception as e:
-        log.error("Analysis failed for run %s: %s", run_id, str(e))
+        import traceback
+        tb = traceback.format_exc()
+        log.error("Analysis failed for run %s: %s\n%s", run_id, str(e), tb)
+        with open("debug_out.txt", "w", encoding="utf-8") as f:
+            f.write(tb)
         run["status"] = "error"
-        push("error", {"message": str(e)})
+        push("error", {"message": str(e) + "\n" + tb})
 
     finally:
         # Clean up only the raw original upload file
@@ -328,41 +345,6 @@ async def get_results(run_id: str):
     return JSONResponse({"status": "done", "result": run["result"]})
 
 
-@app.get("/export/pptx/{run_id}")
-async def export_pptx(run_id: str):
-    """Generate and return a styled .pptx file for a completed run."""
-    if run_id not in runs:
-        raise HTTPException(status_code=404, detail="Run not found.")
-    run = runs[run_id]
-    if run["status"] != "done":
-        raise HTTPException(status_code=400, detail="Run is not complete yet.")
-
-    result = run["result"]
-    out_path = OUTPUT_DIR / f"presentation_{run_id}.pptx"
-
-    # Always regenerate (delete stale cache)
-    if out_path.exists():
-        out_path.unlink()
-
-    try:
-        from tools.pptx_exporter import export_pptx as _export
-        _export(result, out_path, charts_dir=CHARTS_DIR)
-    except Exception as e:
-        import traceback
-        raise HTTPException(status_code=500, detail=f"PPTX generation failed: {e}\n{traceback.format_exc()}")
-
-    filename = (result.get("presentation") or {}).get("title", "AnalystReport")
-    # Sanitise filename
-    safe_name = "".join(c for c in filename if c.isalnum() or c in " _-").strip()
-    safe_name = safe_name.replace(" ", "_") or "AnalystReport"
-
-    return FileResponse(
-        path=str(out_path),
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        filename=f"{safe_name}.pptx",
-    )
-
-
 @app.get("/")
 async def root():
     """Redirect root to the frontend."""
@@ -370,17 +352,7 @@ async def root():
     return RedirectResponse(url="/ui/index.html")
 
 
-@app.get("/presentation/{run_id}")
-async def get_presentation(run_id: str):
-    """Download the generated PowerPoint presentation."""
-    pptx_path = OUTPUT_DIR / f"presentation_{run_id}.pptx"
-    if not pptx_path.exists():
-        raise HTTPException(status_code=404, detail="Presentation not found or not yet generated.")
-    return FileResponse(
-        path=pptx_path,
-        filename=f"Analysis_Report_{run_id[:8]}.pptx",
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    )
+
 
 
 from pydantic import BaseModel

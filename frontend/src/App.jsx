@@ -4,7 +4,6 @@ import {
   Settings,
   BarChart3,
   Target,
-  Presentation,
   CheckCircle2,
   AlertCircle,
   ChevronRight,
@@ -26,10 +25,10 @@ const NODES = [
   { id: 'context_classifier', label: 'Context Classifier', icon: '🌐' },
   { id: 'analysis_planner', label: 'Analysis Planner', icon: '📝' },
   { id: 'code_executor', label: 'Code Executor', icon: '⚡' },
-  { id: 'insight_validator', label: 'Insight Validator', icon: '🛡️' },
-  { id: 'strategy_generator', label: 'Strategy Generator', icon: '🗺️' },
+  { id: 'evaluator_router', label: 'Evaluator & Router', icon: '🔍' },
+  { id: 'insight_strategy_generator', label: 'Insight & Strategy Generator', icon: '🗺️' },
   { id: 'benchmark', label: 'Benchmark (optional)', icon: '🧭' },
-  { id: 'presentation_generator', label: 'Presentation Generator', icon: '🎭' },
+  { id: 'report_generator', label: 'Executive Report', icon: '📄' }
 ];
 
 const SOURCE_TYPES = [
@@ -78,16 +77,17 @@ export default function App() {
   const [metadata, setMetadata] = useState('');
   
   // Rich Ingestion Metadata States
-  const [companyDomain, setCompanyDomain] = useState('');
-  const [targetAudience, setTargetAudience] = useState('');
-  const [companyStage, setCompanyStage] = useState('');
-  const [primaryGoal, setPrimaryGoal] = useState('');
-  const [importantKpis, setImportantKpis] = useState('');
-  const [playbookRules, setPlaybookRules] = useState('');
+  const [companyDomain, setCompanyDomain] = useState('SaaS / B2B Software');
+  const [targetAudience, setTargetAudience] = useState('Mid-Market Enterprise IT Decision Makers');
+  const [companyStage, setCompanyStage] = useState('Growth Stage (Series B)');
+  const [primaryGoal, setPrimaryGoal] = useState('Maximize Annual Recurring Revenue (ARR) growth and minimize customer churn');
+  const [importantKpis, setImportantKpis] = useState('ARR, Churn Rate, Customer Acquisition Cost (CAC), Net Promoter Score (NPS)');
+  const [playbookRules, setPlaybookRules] = useState('Analyze Churn correlations with support tickets. Prioritize segment skew analysis on marketing spend ROI.');
 
   const [useBenchmark, setUseBenchmark] = useState(false);
   const [status, setStatus] = useState('idle'); // idle, uploading, running, done, error
   const [progress, setProgress] = useState({}); // node -> { status, message }
+  const [completedSteps, setCompletedSteps] = useState([]);
   const [results, setResults] = useState(null);
   const [activeTab, setActiveTab] = useState('insights');
   const [slideIdx, setSlideIdx] = useState(0);
@@ -200,6 +200,7 @@ export default function App() {
     if (!file) return;
     setStatus('uploading');
     setErrorMessage('');
+    setCompletedSteps([]);
 
     // Compile rich metadata into a single string for backward compatibility
     const compiledMetadata = JSON.stringify({
@@ -295,6 +296,8 @@ export default function App() {
         setProgress(prev => ({ ...prev, [data.node]: { status: 'done', message: 'Complete' } }));
       } else if (data.type === 'node_progress') {
         setProgress(prev => ({ ...prev, [data.node]: { status: 'active', message: data.message } }));
+      } else if (data.type === 'step_complete') {
+        setCompletedSteps(prev => [...prev, data]);
       } else if (data.type === 'done') {
         evs.close();
         setStatus('done');
@@ -320,8 +323,186 @@ export default function App() {
     }
   };
 
-  const downloadPptx = (runId) => {
-    window.location.href = `${API_BASE}/export/pptx/${runId}`;
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const rid = params.get('run_id');
+    if (rid) {
+      setStatus('done');
+      fetchResults(rid);
+    }
+  }, []);
+
+  const renderResultSummary = (summary) => {
+    if (!summary) return null;
+    
+    let cleaned = summary.trim();
+    
+    // Check if it's a numeric float/int value
+    if (!isNaN(cleaned) && cleaned !== '') {
+      return (
+        <div className="inline-flex flex-col p-4 bg-accent/5 border border-accent/20 rounded-2xl text-left mt-2">
+          <span className="text-[9px] font-black text-accent uppercase tracking-widest">Calculated Value</span>
+          <span className="text-3xl font-heading font-black text-white mt-1">{parseFloat(cleaned).toFixed(4)}</span>
+        </div>
+      );
+    }
+    
+    let parsedObj = null;
+    
+    // Attempt standard JSON parsing
+    try {
+      parsedObj = JSON.parse(cleaned);
+    } catch (e) {
+      // Fallback: try parsing python representation (single quotes, None/True/False)
+      try {
+        let jsonStr = cleaned
+          .replace(/'/g, '"')
+          .replace(/\bNone\b/g, 'null')
+          .replace(/\bTrue\b/g, 'true')
+          .replace(/\bFalse\b/g, 'false');
+        parsedObj = JSON.parse(jsonStr);
+      } catch (innerE) {
+        parsedObj = null;
+      }
+    }
+    
+    if (parsedObj !== null && typeof parsedObj === 'object') {
+      if (Array.isArray(parsedObj)) {
+        // Check if items are objects (like rows of a DataFrame)
+        const isAllObjects = parsedObj.every(item => typeof item === 'object' && item !== null && !Array.isArray(item));
+        if (isAllObjects && parsedObj.length > 0) {
+          const headers = Object.keys(parsedObj[0]);
+          return (
+            <div className="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.02] mt-2">
+              <table className="min-w-full divide-y divide-white/10 text-left text-xs font-light">
+                <thead className="bg-white/5 text-[10px] font-bold text-accent uppercase tracking-wider">
+                  <tr>
+                    {headers.map(h => (
+                      <th key={h} className="px-4 py-2.5 font-semibold">{h.replace(/_/g, ' ')}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-white/80">
+                  {parsedObj.map((row, rIdx) => (
+                    <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors">
+                      {headers.map(h => {
+                        const val = row[h];
+                        let displayVal = '';
+                        if (typeof val === 'number') {
+                          displayVal = Number.isInteger(val) ? val.toString() : val.toFixed(4);
+                        } else if (typeof val === 'boolean') {
+                          displayVal = val ? 'Yes' : 'No';
+                        } else if (val === null || val === undefined) {
+                          displayVal = '-';
+                        } else {
+                          displayVal = String(val);
+                        }
+                        return (
+                          <td key={h} className="px-4 py-2 font-mono text-white/70">{displayVal}</td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        } else {
+          // Flat list of items
+          return (
+            <div className="flex flex-wrap gap-2 text-left mt-2">
+              {parsedObj.map((item, idx) => (
+                <span key={idx} className="px-3 py-1.5 bg-white/[0.03] border border-white/5 rounded-lg text-xs text-white/70">
+                  {String(item)}
+                </span>
+              ))}
+            </div>
+          );
+        }
+      } else {
+        // Key-Value Object / Series / Dict
+        const formatValue = (val) => {
+          if (val === null || val === undefined) return '-';
+          if (typeof val === 'number') {
+            return Number.isInteger(val) ? val.toString() : val.toFixed(4);
+          }
+          if (typeof val === 'boolean') {
+            return val ? 'Yes' : 'No';
+          }
+          if (Array.isArray(val)) {
+            return val.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
+          }
+          if (typeof val === 'object') {
+            return Object.entries(val).map(([k, v]) => `${k}: ${v}`).join(' | ');
+          }
+          return String(val);
+        };
+
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-left mt-2">
+            {Object.entries(parsedObj).map(([key, val]) => {
+              const formatted = formatValue(val);
+              const isLong = formatted.length > 25;
+              return (
+                <div key={key} className="p-3 bg-white/[0.02] border border-white/5 rounded-xl flex flex-col justify-between hover:bg-white/[0.04] transition-colors">
+                  <p className="text-[10px] font-bold text-accent uppercase tracking-wider">{key.replace(/_/g, ' ')}</p>
+                  <p className={`font-heading text-white mt-1 ${isLong ? 'text-xs font-light text-white/70 leading-relaxed break-all' : 'text-lg font-extrabold'}`}>
+                    {formatted}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+    }
+    
+    // Multiline or stdout console logs fallback
+    const lines = cleaned.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length > 1) {
+      return (
+        <div className="space-y-2 p-4 bg-white/[0.01] border-l-2 border-accent/40 rounded-r-xl text-left mt-2">
+          {lines.map((line, lIdx) => {
+            // Check if it's a key-value format (e.g. "Metric: Value")
+            const colonIdx = line.indexOf(':');
+            if (colonIdx > 0 && colonIdx < line.length - 1) {
+              const label = line.slice(0, colonIdx).trim();
+              const val = line.slice(colonIdx + 1).trim();
+              const isValidLabel = label.length < 35 && !label.includes('http') && !label.includes('/') && !label.includes('\\');
+              if (isValidLabel) {
+                return (
+                  <div key={lIdx} className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
+                    <span className="text-[10px] font-bold text-accent uppercase tracking-wider shrink-0">{label}:</span>
+                    <span className="text-xs font-mono text-white/80">{val}</span>
+                  </div>
+                );
+              }
+            }
+            
+            if (line.startsWith('- ') || line.startsWith('* ')) {
+              return (
+                <div key={lIdx} className="flex items-start gap-2 text-xs font-light text-white/70 pl-2">
+                  <span className="text-accent text-[10px] mt-0.5">•</span>
+                  <span>{line.substring(2)}</span>
+                </div>
+              );
+            }
+            
+            return (
+              <p key={lIdx} className="text-xs font-light leading-relaxed text-white/70">
+                {line}
+              </p>
+            );
+          })}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="p-4 bg-white/[0.02] border-l-2 border-accent rounded-r-xl text-xs font-light leading-relaxed text-white/75 italic text-left mt-2">
+        "{cleaned.replace(/^["']|["']$/g, '')}"
+      </div>
+    );
   };
 
   return (
@@ -578,44 +759,138 @@ export default function App() {
               key="running"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="max-w-2xl mx-auto space-y-12 py-20"
+              className="grid lg:grid-cols-[260px,1fr] gap-8 items-start py-8"
             >
-              <div className="text-center space-y-4">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass border-white/10 text-xs font-bold text-accent uppercase tracking-widest">
-                  <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                  Processing Pipeline
+              {/* Compact checklist sidebar (15%) */}
+              <div className="glass rounded-[32px] border border-white/5 p-6 space-y-6 text-left sticky top-8">
+                <div className="border-b border-white/5 pb-3">
+                  <h4 className="text-xs font-black text-white/30 uppercase tracking-[0.2em]">Pipeline State</h4>
                 </div>
-                <h2 className="text-4xl font-heading font-black uppercase tracking-tighter">Analyzing Dataset</h2>
+                <div className="space-y-4">
+                  {NODES.map((node, i) => {
+                    const nodeProgress = progress[node.id];
+                    const isActive = nodeProgress?.status === 'active';
+                    const isDone = nodeProgress?.status === 'done';
+
+                    return (
+                      <div key={node.id} className="flex items-center gap-3">
+                        <div className={`
+                          w-5 h-5 rounded-full border flex items-center justify-center text-[10px] shrink-0 transition-all duration-300
+                          ${isDone ? 'bg-emerald-500 border-emerald-500 text-white font-bold' : isActive ? 'bg-accent border-accent text-white animate-pulse' : 'bg-black border-white/10 text-white/30'}
+                        `}>
+                          {isDone ? '✓' : i + 1}
+                        </div>
+                        <span className={`text-xs font-semibold leading-none ${isDone ? 'text-white/60' : isActive ? 'text-accent' : 'text-white/20'}`}>
+                          {node.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="space-y-0">
-                {NODES.map((node, i) => {
-                  const nodeProgress = progress[node.id];
-                  const isActive = nodeProgress?.status === 'active';
-                  const isDone = nodeProgress?.status === 'done';
+              {/* Main Analysis Stream Area (85%) */}
+              <div className="space-y-8 bg-black/40 p-8 rounded-[32px] border border-white/5 min-h-[600px]">
+                <h3 className="text-xl font-heading font-bold text-left border-b border-white/5 pb-4 uppercase tracking-tight text-white flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse" />
+                  Live Analysis Stream
+                </h3>
 
-                  return (
-                    <div key={node.id} className="relative group flex gap-6 pb-10">
-                      {i < NODES.length - 1 && (
-                        <div className={`absolute left-[17px] top-8 bottom-0 w-[2px] transition-colors duration-500 ${isDone ? 'bg-accent' : 'bg-white/5'}`} />
-                      )}
-                      <div className={`
-                        w-9 h-9 rounded-full border-2 flex items-center justify-center z-10 transition-all duration-500
-                        ${isDone ? 'bg-accent border-accent text-white' : isActive ? 'bg-black border-accent text-accent shadow-[0_0_20px_rgba(99,102,241,0.4)]' : 'bg-black border-white/10 text-white/20'}
-                      `}>
-                        {isDone ? <CheckCircle2 className="w-4 h-4" /> : <span className="text-xs font-bold">{i + 1}</span>}
-                      </div>
-                      <div className="space-y-1">
-                        <p className={`font-semibold tracking-tight ${isDone ? 'text-white' : isActive ? 'text-accent' : 'text-white/20'}`}>
-                          {node.label}
-                        </p>
-                        <p className="text-[11px] font-mono text-white/30 uppercase tracking-widest">
-                          {isActive ? nodeProgress.message : isDone ? 'Task finalized' : 'Queueing...'}
-                        </p>
-                      </div>
+                {completedSteps.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-32 text-center space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center animate-spin">
+                      ⏳
                     </div>
-                  );
-                })}
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-white/80">Initializing Pipeline</p>
+                      <p className="text-xs text-white/40 max-w-xs leading-relaxed">Parsing metadata and profiling data schema. Exploration results will stream here shortly.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-8 text-left">
+                    {completedSteps.map((step, idx) => (
+                      <motion.div
+                        key={step.step_id || idx}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="glass rounded-3xl p-8 border border-white/5 hover:border-white/10 transition-all space-y-6"
+                      >
+                        <div className="flex items-start justify-between border-b border-white/5 pb-4">
+                          <div>
+                            <span className="text-[10px] font-black text-accent uppercase tracking-widest">Step {step.step_id} Completed</span>
+                            <h4 className="text-2xl font-heading font-black uppercase tracking-tight text-white mt-1">{step.title}</h4>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            Success
+                          </span>
+                        </div>
+
+                        {step.objective && (
+                          <div className="space-y-1.5">
+                            <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em]">Objective</p>
+                            <p className="text-xs text-white/60 font-light leading-relaxed">{step.objective}</p>
+                          </div>
+                        )}
+
+                        {step.charts && step.charts.length > 0 && (
+                          <div className="grid sm:grid-cols-1 md:grid-cols-2 gap-6 my-6">
+                            {step.charts.map((chart, cIdx) => (
+                              <div
+                                key={cIdx}
+                                className="rounded-2xl border border-white/5 bg-black/40 p-4 cursor-pointer overflow-hidden group relative"
+                                onClick={() => setLightbox({ url: `${API_BASE}${chart.url}`, title: chart.title, desc: 'Generated dynamically by the agent.' })}
+                              >
+                                <div className="aspect-[16/10] overflow-hidden rounded-xl bg-white/5 flex items-center justify-center">
+                                  <img
+                                    src={`${API_BASE}${chart.url}`}
+                                    className="w-full h-full object-contain filter brightness-90 group-hover:brightness-110 transition-all duration-500"
+                                    alt={chart.title}
+                                  />
+                                </div>
+                                <p className="text-[9px] font-bold text-center text-white/40 uppercase tracking-widest mt-3">{chart.title}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {step.result_summary && (
+                          <div className="space-y-1.5 pt-4 border-t border-white/5">
+                            <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em]">Key Findings Summary</p>
+                            {renderResultSummary(step.result_summary)}
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+
+                    {(() => {
+                      const activeStepProgress = progress['code_executor'];
+                      const isActiveStep = activeStepProgress?.status === 'active';
+                      const activeStepMessage = activeStepProgress?.message || '';
+                      
+                      return isActiveStep && (
+                        <motion.div
+                          key="active-step-skeleton"
+                          initial={{ opacity: 0.5 }}
+                          animate={{ opacity: [0.5, 0.8, 0.5] }}
+                          transition={{ repeat: Infinity, duration: 2 }}
+                          className="glass rounded-3xl p-8 border border-accent/20 bg-accent/5 space-y-6"
+                        >
+                          <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-black text-accent uppercase tracking-widest animate-pulse">Running In Sandbox</span>
+                              <h4 className="text-xl font-heading font-black uppercase tracking-tight text-white/80">{activeStepMessage || "Processing Analysis Step..."}</h4>
+                            </div>
+                            <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                          </div>
+                          <div className="space-y-3">
+                            <div className="h-3 w-1/3 bg-white/5 rounded-md" />
+                            <div className="h-20 w-full bg-white/5 rounded-2xl animate-pulse" />
+                          </div>
+                        </motion.div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </motion.div>
           ) : status === 'done' && results ? (
@@ -684,7 +959,6 @@ export default function App() {
                       { id: 'report', label: 'Executive Report', icon: <CheckCircle2 className="w-4 h-4" /> },
                       { id: 'visuals', label: 'Data Visuals', icon: <BarChart3 className="w-4 h-4" /> },
                       { id: 'strategy', label: 'Strategy', icon: <ArrowRight className="w-4 h-4" /> },
-                      { id: 'deck', label: 'Presentation', icon: <Presentation className="w-4 h-4" /> },
                     ].map(tab => (
                       <button
                         key={tab.id}
@@ -833,74 +1107,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {activeTab === 'deck' && (
-                    <div className="max-w-4xl mx-auto space-y-8">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-2xl font-heading font-bold tracking-tight">EXECUTIVE BRIEF</h3>
-                        <button
-                          onClick={() => downloadPptx(currentRunId)}
-                          className="bg-accent text-white px-6 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
-                        >
-                          <Download className="w-4 h-4" /> Export Slide Deck
-                        </button>
-                      </div>
 
-                      {results.presentation?.slides?.length > 0 ? (
-                        <div className="aspect-[16/10] bg-[#020202] rounded-[40px] border border-white/10 p-16 relative overflow-hidden flex flex-col justify-between shadow-2xl shadow-accent/5">
-                          <div className="space-y-8">
-                            <h4 className="text-4xl font-heading font-black uppercase tracking-tight border-b border-white/5 pb-8">
-                              {results.presentation.slides[slideIdx]?.title}
-                            </h4>
-                            <div className="grid md:grid-cols-[1fr,1fr] gap-12">
-                              <div className="space-y-6">
-                                {results.presentation.slides[slideIdx]?.content?.map((bullet, idx) => (
-                                  <div key={idx} className="flex gap-4">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-accent mt-2.5 shrink-0" />
-                                    <p className="text-xl font-light text-white/70 leading-relaxed font-body">{bullet}</p>
-                                  </div>
-                                ))}
-                              </div>
-                              {results.presentation.slides[slideIdx]?.chart_reference && (
-                                <div className="rounded-3xl glass border border-white/5 overflow-hidden flex items-center justify-center p-4">
-                                  <img
-                                    src={`${API_BASE}/charts/${results.presentation.slides[slideIdx].chart_reference.split(/[\\/]/).pop()}`}
-                                    className="w-full h-full object-contain"
-                                    alt="Slide Visual"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between pt-12 border-t border-white/5">
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setSlideIdx(Math.max(0, slideIdx - 1))}
-                                disabled={slideIdx === 0}
-                                className="w-12 h-12 rounded-full glass border-white/10 flex items-center justify-center hover:bg-white/10 disabled:opacity-20"
-                              >
-                                ←
-                              </button>
-                              <button
-                                onClick={() => setSlideIdx(Math.min(results.presentation.slides.length - 1, slideIdx + 1))}
-                                disabled={slideIdx === results.presentation.slides.length - 1}
-                                className="w-12 h-12 rounded-full glass border-white/10 flex items-center justify-center hover:bg-white/10 disabled:opacity-20"
-                              >
-                                →
-                              </button>
-                            </div>
-                            <p className="text-[10px] font-mono font-bold text-white/20 uppercase tracking-[0.4em]">
-                              Slide {slideIdx + 1} // {results.presentation.slides.length}
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-center py-20 glass rounded-[40px] border border-white/5">
-                          <p className="text-white/30 font-mono text-sm tracking-widest uppercase">Performance results generated. No slides available.</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
 

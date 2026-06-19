@@ -48,16 +48,8 @@ class Recommendation(BaseModel):
     risk: str
     suggested_next_step: str
 
-
-class Slide(BaseModel):
-    """A single slide in the presentation payload."""
-    title: str
-    content: list[str]
-    chart_reference: Optional[str] = None
-    speaker_notes: Optional[str] = None
-
-
 # ── LangGraph State ──────────────────────────────────────────────────────────
+
 
 class AnalysisState(TypedDict, total=False):
     """Global state persisted across all LangGraph nodes."""
@@ -102,10 +94,7 @@ class AnalysisState(TypedDict, total=False):
     benchmark_enabled: bool
     benchmark_results: Optional[dict]
 
-    # Presentation
-    presentation_payload: Optional[dict]
-    presentation_design: Optional[dict]
-
     # Logging
     trace_log: list[dict]
+
 

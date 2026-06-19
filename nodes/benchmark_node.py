@@ -53,7 +53,7 @@ Return ONLY a JSON object:
 
 
 def should_run_benchmark(state: AnalysisState) -> str:
-    """Conditional edge: run benchmark or skip to presentation."""
+    """Conditional edge: run benchmark or skip to report generator."""
     if not state.get("benchmark_enabled", False):
         return "skip"
     context = state.get("business_context", "")

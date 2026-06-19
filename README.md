@@ -2,7 +2,7 @@
 
 ## **Overview**
 
-The **Autonomous Data Analyst Agent** is an AI-powered system that transforms raw business data into **validated insights, strategic recommendations, and presentation-ready reports**.
+The **Autonomous Data Analyst Agent** is an AI-powered system that transforms raw business data into **validated insights, strategic recommendations, and executive-ready reports**.
 
 Traditional analytics tools generate dashboards and charts but still require human interpretation. This system automates the **entire analytical workflow**, acting like a virtual data analyst that can understand datasets, plan analyses, execute statistical computations, validate results, and communicate findings in a clear business-oriented format.
 
@@ -29,8 +29,8 @@ Statistical checks and validation mechanisms ensure that generated insights are 
 ### **Strategic Recommendation Generation**
 The system translates analytical findings into **actionable business recommendations** that support decision-making.
 
-### **Presentation-Ready Reporting**
-Automatically generates **PowerPoint-style presentations** summarizing insights, trends, and strategic recommendations for stakeholders.
+### **Executive Written Reporting**
+Automatically generates professional, comprehensive Markdown reports summarizing data health, key findings, validated insights, and structured strategic action plans.
 
 ### **Metadata-Aware Analysis**
 Users can optionally provide contextual information (such as industry, company stage, or goals) to guide the analysis and improve relevance.
